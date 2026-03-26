@@ -31,8 +31,7 @@ export async function GET(req) {
           if (schedule.includes(diffDays)) {
             for (const emailAddr of emailsToNotify) {
               // Note: Change the URL here to your real live domain once you deploy it to the web!
-              await fetch(`http://localhost:3000/api/send-email`, {
-                method: "POST",
+              await fetch(`https://project-tracker-nine-phi.vercel.app/api/send-email`, {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ to: emailAddr, project: row.project, sheetName: sheet.name, type: `${col.title} - ${diffDays} DAY REMINDER` })
               });
