@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import connectMongo from "../../../lib/mongodb";
 import Tracker from "../../../models/Tracker";
 
-// Forces Next.js to bypass the cache and fetch fresh live data every single time.
+// Force fresh data every time
 export const dynamic = "force-dynamic";
 
 export async function GET() {
@@ -20,17 +20,33 @@ export async function POST(req) {
     await connectMongo();
     const incomingData = await req.json();
     
-    // SAFETY LOCK: If the frontend sends nothing, do not wipe the database!
-    if (!incomingData || (Array.isArray(incomingData) && incomingData.length === 0) || Object.keys(incomingData).length === 0) {
-      return NextResponse.json({ success: true, message: "No data provided to save." });
+    // Safety Lock
+    if (!incomingData || (Array.isArray(incomingData) && incomingData.length === 0)) {
+      return NextResponse.json({ success: true, message: "No data to save." });
     }
 
-    // Force the incoming data to be an array so insertMany always works
     const dataToSave = Array.isArray(incomingData) ? incomingData : [incomingData];
+    const activeIds = [];
 
-    // Wipe old data ONLY because we know for a fact we have new data to replace it with
-    await Tracker.deleteMany({});
-    await Tracker.insertMany(dataToSave);
+    // SMART SAVE: Update each sheet individually instead of wiping the whole database!
+    for (const sheet of dataToSave) {
+      activeIds.push(sheet.id);
+      
+      // Strip out the internal MongoDB _id so it doesn't cause update conflicts
+      const { _id, ...updateData } = sheet;
+
+      // Find the specific project by your custom 'id' and update it safely
+      await Tracker.findOneAndUpdate(
+        { id: sheet.id }, 
+        { $set: updateData }, 
+        { upsert: true, new: true } // If it doesn't exist yet, create it!
+      );
+    }
+
+    // Clean up: Only delete sheets that the user actually clicked "Delete" on
+    if (activeIds.length > 0) {
+      await Tracker.deleteMany({ id: { $nin: activeIds } });
+    }
     
     return NextResponse.json({ success: true });
   } catch (error) {
