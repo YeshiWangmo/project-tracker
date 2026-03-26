@@ -1,23 +1,7 @@
-import { useState, useEffect } from 'react';
-
-export default function Page() {
-  // State variables
-  const [sheets, setSheets] = useState([]);
-  const [activeSheetId, setActiveSheetId] = useState(null);
-  const [users, setUsers] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [modal, setModal] = useState({show: false});
-  const [highlightMode, setHighlightMode] = useState(null);
-  const [triggerEmail, setTriggerEmail] = useState(0);
-
-  // --- INITIAL LOAD WITH SAFEGUARDS & ID SYNC FIX ---
+// --- INITIAL LOAD WITH SAFEGUARDS & ID SYNC FIX ---
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // 🛑 FIX: Added { cache: 'no-store' } to force fresh data from the database
         const resSheets = await fetch("/api/tracker", { cache: 'no-store' });
         const dbSheets = await resSheets.json();
         
@@ -29,7 +13,6 @@ export default function Page() {
         }
         setSheets(sheetsToLoad);
 
-        // Force the Active ID to match the actual database
         const savedActiveId = localStorage.getItem("tracker-active-id");
         const parsedId = savedActiveId ? JSON.parse(savedActiveId) : null;
         
@@ -39,13 +22,11 @@ export default function Page() {
           setActiveSheetId(sheetsToLoad[0].id);
         }
 
-        // 🛑 FIX: Added { cache: 'no-store' } here too
         const resUsers = await fetch("/api/users", { cache: 'no-store' });
         const dbUsers = await resUsers.json();
         if (Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);
         else setUsers([{ id: 1, username: "admin", password: "password123", role: "admin" }]);
 
-        // 🛑 FIX: Added { cache: 'no-store' } here too
         const resHistory = await fetch("/api/history", { cache: 'no-store' });
         const dbHistory = await resHistory.json();
         if (Array.isArray(dbHistory) && dbHistory.length > 0) setHistory(dbHistory);
@@ -71,7 +52,6 @@ export default function Page() {
           await fetch("/api/tracker", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sheets) });
           await fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(users) });
           
-          // 🚨 FIX: TEMPORARILY DISABLED HISTORY SAVE TO PREVENT CRASH
           await fetch("/api/history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(history) });
         } catch (error) {
           console.error("Failed to save to DB:", error);
@@ -519,4 +499,3 @@ export default function Page() {
       </main>
     </div>
   );
-}
