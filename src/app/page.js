@@ -27,19 +27,37 @@ export default function Home() {
     emailCols: [{ id: 201, title: "Stakeholder", role: "receiver" }]
   });
 
-  // --- INITIAL LOAD WITH SAFEGUARDS & ID SYNC FIX ---
+  // --- INITIAL LOAD WITH AGGRESSIVE CACHE-BUSTING ---
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const resSheets = await fetch("/api/tracker", { cache: 'no-store' });
+        // 1. The Cache Buster: By adding Date.now(), we force Vercel to fetch fresh DB data
+        const resSheets = await fetch(`/api/tracker?t=${Date.now()}`, { 
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          }
+        });
+        
+        if (!resSheets.ok) throw new Error("Failed to fetch from server");
+
         const dbSheets = await resSheets.json();
+        console.log("✅ Live Data from MongoDB:", dbSheets); // Open F12 console to see this!
         
         let sheetsToLoad = [];
-        if (Array.isArray(dbSheets) && dbSheets.length > 0) {
-          sheetsToLoad = dbSheets;
+        
+        // 2. Safe Array Extraction (Handles weird Next.js object wrapping)
+        const extractedArray = Array.isArray(dbSheets) ? dbSheets : 
+                               (dbSheets.data ? dbSheets.data : []);
+
+        if (extractedArray.length > 0) {
+          sheetsToLoad = extractedArray;
         } else {
           sheetsToLoad = [createDefaultSheet()];
         }
+        
         setSheets(sheetsToLoad);
 
         const savedActiveId = localStorage.getItem("tracker-active-id");
@@ -51,23 +69,28 @@ export default function Home() {
           setActiveSheetId(sheetsToLoad[0].id);
         }
 
-        const resUsers = await fetch("/api/users", { cache: 'no-store' });
-        const dbUsers = await resUsers.json();
-        if (Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);
-        else setUsers([{ id: 1, username: "admin", password: "password123", role: "admin" }]);
+        // Bust cache for users and history too
+        const resUsers = await fetch(`/api/users?t=${Date.now()}`, { cache: 'no-store' });
+        if (resUsers.ok) {
+          const dbUsers = await resUsers.json();
+          if (Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);
+          else setUsers([{ id: 1, username: "admin", password: "password123", role: "admin" }]);
+        }
 
-        const resHistory = await fetch("/api/history", { cache: 'no-store' });
-        const dbHistory = await resHistory.json();
-        if (Array.isArray(dbHistory) && dbHistory.length > 0) setHistory(dbHistory);
+        const resHistory = await fetch(`/api/history?t=${Date.now()}`, { cache: 'no-store' });
+        if (resHistory.ok) {
+          const dbHistory = await resHistory.json();
+          if (Array.isArray(dbHistory) && dbHistory.length > 0) setHistory(dbHistory);
+        }
 
       } catch (error) {
-        console.error("Failed to fetch from DB:", error);
+        console.error("🚨 CRITICAL READ ERROR:", error);
         const fallbackSheet = createDefaultSheet();
         setSheets([fallbackSheet]); 
         setActiveSheetId(fallbackSheet.id);
+      } finally {
+        setIsLoaded(true);
       }
-      
-      setIsLoaded(true);
     };
     
     fetchData();
