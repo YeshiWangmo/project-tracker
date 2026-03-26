@@ -26,27 +26,29 @@ export async function POST(req) {
     }
 
     const dataToSave = Array.isArray(incomingData) ? incomingData : [incomingData];
-    const activeIds = [];
 
-    // SMART SAVE: Update each sheet individually instead of wiping the whole database!
+    // SMART SAVE: Update existing or create new. NO DELETIONS ALLOWED.
     for (const sheet of dataToSave) {
-      activeIds.push(sheet.id);
       
+      // Safety Check: If the frontend forgot to give this sheet a unique ID, make one!
+      const uniqueId = sheet.id ? sheet.id : Date.now() + Math.floor(Math.random() * 1000);
+
       // Strip out the internal MongoDB _id so it doesn't cause update conflicts
       const { _id, ...updateData } = sheet;
+      
+      // Ensure the unique ID is saved
+      updateData.id = uniqueId;
 
-      // Find the specific project by your custom 'id' and update it safely
+      // Find the specific project by its ID and update it safely
       await Tracker.findOneAndUpdate(
-        { id: sheet.id }, 
+        { id: uniqueId }, 
         { $set: updateData }, 
-        { upsert: true, new: true } // If it doesn't exist yet, create it!
+        { upsert: true, new: true } 
       );
     }
 
-    // Clean up: Only delete sheets that the user actually clicked "Delete" on
-    if (activeIds.length > 0) {
-      await Tracker.deleteMany({ id: { $nin: activeIds } });
-    }
+    // 🛑 I HAVE COMPLETELY REMOVED THE `deleteMany` CLEANUP BLOCK HERE. 
+    // MongoDB is now strictly forbidden from deleting your old sheets!
     
     return NextResponse.json({ success: true });
   } catch (error) {
