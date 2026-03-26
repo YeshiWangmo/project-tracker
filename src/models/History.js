@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+export const dynamic = "force-dynamic";
 
 const HistorySchema = new mongoose.Schema({
   id: { type: Number },

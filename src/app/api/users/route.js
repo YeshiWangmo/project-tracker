@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import connectMongo from "../../../lib/mongodb";
 import User from "../../../models/User";
-
+export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await connectMongo();
