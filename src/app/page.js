@@ -1,38 +1,24 @@
-"use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from 'react';
 
-export default function Home() {
+export default function Page() {
+  // State variables
   const [sheets, setSheets] = useState([]);
   const [activeSheetId, setActiveSheetId] = useState(null);
+  const [users, setUsers] = useState([]);
   const [history, setHistory] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [view, setView] = useState("dashboard");
-  const [highlightMode, setHighlightMode] = useState(null);
-
-  // AUTH & MODAL STATE
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
-  const [users, setUsers] = useState([]);
-  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
-  
-  // UPDATED MODAL STATE
-  const [modal, setModal] = useState({ show: false, type: "", title: "", value: "", extra: "", role: "user", editId: null });
-
-  const createDefaultSheet = () => ({
-    id: Date.now(),
-    name: "Main Tracker",
-    rows: [{ id: 1, project: "New Project", emails: {}, startDate: "", hasStarted: false, statuses: {}, dueDates: {}, reportStatuses: {}, reportDates: {} }],
-    dueTypes: [{ id: 101, title: "Phase 1", reminderDays: [30, 17, 7, 3], scheduleName: "Default (30,17,7,3)" }],
-    reportCols: [{ id: 301, title: "Loan Doc", reminderDays: [30, 17, 7, 3], scheduleName: "Default (30,17,7,3)" }],
-    emailCols: [{ id: 201, title: "Stakeholder", role: "receiver" }]
-  });
+  const [modal, setModal] = useState({show: false});
+  const [highlightMode, setHighlightMode] = useState(null);
+  const [triggerEmail, setTriggerEmail] = useState(0);
 
   // --- INITIAL LOAD WITH SAFEGUARDS & ID SYNC FIX ---
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch Sheets
-        const resSheets = await fetch("/api/tracker");
+        // 🛑 FIX: Added { cache: 'no-store' } to force fresh data from the database
+        const resSheets = await fetch("/api/tracker", { cache: 'no-store' });
         const dbSheets = await resSheets.json();
         
         let sheetsToLoad = [];
@@ -43,25 +29,24 @@ export default function Home() {
         }
         setSheets(sheetsToLoad);
 
-        // 🚨 NEW FIX: Force the Active ID to match the actual database!
+        // Force the Active ID to match the actual database
         const savedActiveId = localStorage.getItem("tracker-active-id");
         const parsedId = savedActiveId ? JSON.parse(savedActiveId) : null;
         
         if (parsedId && sheetsToLoad.some(s => s.id === parsedId)) {
           setActiveSheetId(parsedId);
         } else {
-          // If the ID is broken, force it to lock onto the very first sheet
           setActiveSheetId(sheetsToLoad[0].id);
         }
 
-        // Fetch Users
-        const resUsers = await fetch("/api/users");
+        // 🛑 FIX: Added { cache: 'no-store' } here too
+        const resUsers = await fetch("/api/users", { cache: 'no-store' });
         const dbUsers = await resUsers.json();
         if (Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);
         else setUsers([{ id: 1, username: "admin", password: "password123", role: "admin" }]);
 
-        // 🚨 FIX: TEMPORARILY DISABLED HISTORY FETCH TO PREVENT CRASH
-        const resHistory = await fetch("/api/history");
+        // 🛑 FIX: Added { cache: 'no-store' } here too
+        const resHistory = await fetch("/api/history", { cache: 'no-store' });
         const dbHistory = await resHistory.json();
         if (Array.isArray(dbHistory) && dbHistory.length > 0) setHistory(dbHistory);
 
