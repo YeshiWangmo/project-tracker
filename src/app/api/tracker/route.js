@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import connectMongo from "../../../lib/mongodb";
 import Tracker from "../../../models/Tracker";
 
+// 🛑 THIS IS THE MAGIC KEY! 
+// It forces Next.js to bypass the cache and fetch fresh live data every single time.
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     await connectMongo();
