@@ -1,4 +1,33 @@
-// --- INITIAL LOAD WITH SAFEGUARDS & ID SYNC FIX ---
+"use client";
+import { useState, useEffect, useCallback } from "react";
+
+export default function Home() {
+  const [sheets, setSheets] = useState([]);
+  const [activeSheetId, setActiveSheetId] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [view, setView] = useState("dashboard");
+  const [highlightMode, setHighlightMode] = useState(null);
+
+  // AUTH & MODAL STATE
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  
+  // UPDATED MODAL STATE
+  const [modal, setModal] = useState({ show: false, type: "", title: "", value: "", extra: "", role: "user", editId: null });
+
+  const createDefaultSheet = () => ({
+    id: Date.now(),
+    name: "Main Tracker",
+    rows: [{ id: 1, project: "New Project", emails: {}, startDate: "", hasStarted: false, statuses: {}, dueDates: {}, reportStatuses: {}, reportDates: {} }],
+    dueTypes: [{ id: 101, title: "Phase 1", reminderDays: [30, 17, 7, 3], scheduleName: "Default (30,17,7,3)" }],
+    reportCols: [{ id: 301, title: "Loan Doc", reminderDays: [30, 17, 7, 3], scheduleName: "Default (30,17,7,3)" }],
+    emailCols: [{ id: 201, title: "Stakeholder", role: "receiver" }]
+  });
+
+  // --- INITIAL LOAD WITH SAFEGUARDS & ID SYNC FIX ---
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -51,7 +80,6 @@
         try {
           await fetch("/api/tracker", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sheets) });
           await fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(users) });
-          
           await fetch("/api/history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(history) });
         } catch (error) {
           console.error("Failed to save to DB:", error);
