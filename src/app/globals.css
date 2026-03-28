@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+.project-row-pending {
+  background-color: #fee2e2 !important;
+  border-left: 4px solid #ef4444;
+}
+
+.project-row-cleared {
+  background-color: #dcfce7 !important;
+  border-left: 4px solid #22c55e;
+}
