@@ -23,8 +23,14 @@ export async function GET(req) {
 
         for (const [colId, emailString] of Object.entries(row.emails || {})) {
           if (typeof emailString === "string" && emailString.trim() !== "") {
+            // Find what role this column is assigned to
             const colDef = (sheet.emailCols || []).find(c => c.id.toString() === colId);
-            const role = colDef ? colDef.role : "receiver";
+            let role = "receiver";
+
+            // NEW FIX: If the column title contains the word "Payer", make them a payer!
+            if (colDef && colDef.title && colDef.title.toLowerCase().includes("payer")) {
+              role = "payer";
+            }
 
             const splitEmails = emailString.split(",").map(e => e.trim());
             for (const email of splitEmails) {
