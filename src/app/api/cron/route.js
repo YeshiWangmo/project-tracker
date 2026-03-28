@@ -27,8 +27,10 @@ export async function GET(req) {
             const colDef = (sheet.emailCols || []).find(c => c.id.toString() === colId);
             let role = "receiver";
 
-            // NEW FIX: If the column title contains the word "Payer", make them a payer!
-            if (colDef && colDef.title && colDef.title.toLowerCase().includes("payer")) {
+            // Prefer the saved role from the UI, but keep the title fallback for older data.
+            if (colDef?.role === "payer") {
+              role = "payer";
+            } else if (colDef && colDef.title && colDef.title.toLowerCase().includes("payer")) {
               role = "payer";
             }
 
