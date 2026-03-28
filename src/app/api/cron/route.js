@@ -23,14 +23,22 @@ export async function GET(req) {
 
         for (const [colId, emailString] of Object.entries(row.emails || {})) {
           if (typeof emailString === "string" && emailString.trim() !== "") {
-            // Find what role this column is assigned to
-            const colDef = (sheet.emailCols || []).find(c => c.id.toString() === colId);
+            // Default to receiver
             let role = "receiver";
+            let colTitle = "";
 
-            // Prefer the saved role from the UI, but keep the title fallback for older data.
-            if (colDef?.role === "payer") {
-              role = "payer";
-            } else if (colDef && colDef.title && colDef.title.toLowerCase().includes("payer")) {
+            // Search every array on the sheet to find the matching column title.
+            for (const key of Object.keys(sheet)) {
+              if (Array.isArray(sheet[key])) {
+                const foundCol = sheet[key].find(c => c && c.id && c.id.toString() === colId);
+                if (foundCol && foundCol.title) {
+                  colTitle = foundCol.title;
+                  break;
+                }
+              }
+            }
+
+            if (colTitle.toLowerCase().includes("payer")) {
               role = "payer";
             }
 
