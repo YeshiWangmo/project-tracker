@@ -630,9 +630,15 @@ export default function Home() {
                             {!row.hasStarted ? (
                               <button onClick={() => {
                                   if(!row.startDate) return alert("Please select a Start Date first.");
-                                  const formattedDate = new Date(row.startDate).toISOString().split('T')[0];
-                                  const msg = `${row.project} has been started on ${formattedDate} now u will receive the notification for this one`;
-                                  Object.values(row.emails || {}).forEach(em => triggerEmail(em, row.project, msg));
+                                  const msg = `This is a message from the MoF, Bhutan. ${row.project} has started, now you will be receiving the notification of this from now on.`;
+                                  Object.values(row.emails || {}).forEach(emailString => {
+                                    if (emailString) {
+                                      emailString.split(",").forEach(em => {
+                                        const cleanEmail = em.trim();
+                                        if (cleanEmail) triggerEmail(cleanEmail, row.project, msg);
+                                      });
+                                    }
+                                  });
                                   setSheets(sheets.map(s => s.id === activeSheetId ? {...s, rows: s.rows.map(r => r.id === row.id ? {...r, hasStarted: true} : r)} : s));
                                 }} className="w-full py-2 rounded-lg text-[8px] font-black tracking-widest border transition-all bg-blue-500 text-white border-blue-600 hover:bg-blue-600 shadow-sm">START PROJECT</button>
                             ) : (
@@ -741,7 +747,17 @@ export default function Home() {
                                     const next = status === "Pending" ? "Cleared" : "Pending";
                                     setSheets(sheets.map(s => s.id === activeSheetId ? {...s, rows: s.rows.map(r => r.id === row.id ? {...r, reportStatuses: {...r.reportStatuses, [col.id]: next}} : r)} : s));
                                     logActivity(row.project, `Marked ${col.title} as ${next}`);
-                                    if(next === "Cleared") Object.values(row.emails || {}).forEach(em => triggerEmail(em, row.project, `REPORT ${col.title} SUBMITTED`));
+                                    if(next === "Cleared") {
+                                      const stopMsg = `${row.project} notification will stop from now on / will not receive.`;
+                                      Object.values(row.emails || {}).forEach(emailString => {
+                                        if (emailString) {
+                                          emailString.split(",").forEach(em => {
+                                            const cleanEmail = em.trim();
+                                            if (cleanEmail) triggerEmail(cleanEmail, row.project, stopMsg);
+                                          });
+                                        }
+                                      });
+                                    }
                                   }} className={`w-full py-2 rounded-lg text-[9px] font-black tracking-widest border transition-all ${status === 'Cleared' ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-white text-indigo-500 border-indigo-200 shadow-sm'}`}>
                                   {status === "Cleared" ? "SUBMITTED" : "PENDING"}
                                 </button>
