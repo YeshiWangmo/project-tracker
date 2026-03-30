@@ -1,45 +1,67 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+import nodemailer from "nodemailer";
 
 export async function POST(req) {
   try {
-    const { to, project, sheetName, type } = await req.json();
+    const { to, project, sheetName, type, role, sheetId, rowId, colId, isReport, baseUrl } = await req.json();
 
-    const htmlContent = `
-    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; border-radius: 8px; border: 1px solid #e2e8f0; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-      
-      <div style="border-bottom: 2px solid #2563eb; padding-bottom: 15px; margin-bottom: 20px;">
-        <h2 style="color: #1e293b; margin: 0; font-size: 20px;">Official Project Notification</h2>
-      </div>
-      
-      <p style="font-size: 16px; color: #334155; line-height: 1.6; margin-bottom: 25px;">
-        ${type}
-      </p>
-      
-      <div style="background-color: #f8fafc; padding: 15px; border-radius: 6px; border-left: 4px solid #3b82f6;">
-        <p style="font-size: 15px; color: #475569; margin: 0;"><strong>Project Reference:</strong> ${project}</p>
-      </div>
-      
-      <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0 20px 0;" />
-      <p style="font-size: 12px; color: #94a3b8; text-align: center; margin: 0;">
-        This is an automated official notification.<br/>
-        Ministry of Finance, Royal Government of Bhutan.
-      </p>
+    console.log(`\nPreparing email for: ${to}`);
+    console.log(`   Role: ${role} | Sheet: ${sheetId} | Row: ${rowId} | Col: ${colId}`);
 
-    </div>
-    `;
-
-    const data = await resend.emails.send({
-      from: "Project Tracker <onboarding@resend.dev>",
-      to: [to],
-      subject: `Project Update: ${project}`,
-      html: htmlContent,
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
     });
 
-    return NextResponse.json({ success: true, data });
+    let actionButtons = "";
+
+    if (role === "payer" && sheetId && rowId && colId) {
+      console.log("   Payer detected and IDs found. Generating buttons!");
+
+      const clearedLink = `${baseUrl}/api/update-status?sheetId=${sheetId}&rowId=${rowId}&colId=${colId}&status=Cleared&isReport=${isReport}`;
+      const pendingLink = `${baseUrl}/api/update-status?sheetId=${sheetId}&rowId=${rowId}&colId=${colId}&status=Pending&isReport=${isReport}`;
+
+      actionButtons = `
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px dashed #cbd5e1;">
+          <p style="font-size: 14px; color: #334155; margin-bottom: 15px;"><strong>Update the status directly:</strong></p>
+          <a href="${clearedLink}" style="background-color: #10b981; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">Mark as Cleared</a>
+          <a href="${pendingLink}" style="background-color: #f59e0b; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Mark as Pending</a>
+        </div>
+      `;
+    } else if (role === "payer") {
+      console.log("   Warning: Payer detected, but missing an ID! Buttons hidden.");
+    } else {
+      console.log("   Receiver detected. No buttons needed.");
+    }
+
+    const mailOptions = {
+      from: `"MoF Project Tracker" <${process.env.GMAIL_USER}>`,
+      to: to,
+      subject: `${project} - Tracker Update`,
+      text: type,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 600px;">
+          <h2 style="color: #1e293b; margin-top: 0;">Project Update</h2>
+          <p style="font-size: 16px; color: #334155;"><strong>Project:</strong> ${project}</p>
+          <p style="font-size: 16px; color: #334155;"><strong>Message:</strong> ${type}</p>
+          
+          ${actionButtons}
+
+          <hr style="margin: 20px 0; border: none; border-top: 1px solid #cbd5e1;" />
+          <p style="font-size: 12px; color: #94a3b8;">
+            This is an automated notification from the MoF Project Tracker (${sheetName}).
+          </p>
+        </div>
+      `,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    return NextResponse.json({ success: true, messageId: info.messageId });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Nodemailer Error:", error);
+    return NextResponse.json({ error: "Failed to send email" }, { status: 500 });
   }
 }

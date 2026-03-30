@@ -11,12 +11,14 @@ export async function GET(req) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const host = req.headers.get("host") || "project-tracker-nine-phi.vercel.app";
+    const host = req.headers.get("host") || "localhost:3000";
     const protocol = host.includes("localhost") ? "http" : "https";
     const baseUrl = `${protocol}://${host}`;
 
+    // --- FIX 1: DEDUPLICATE EMAILS ---
     const extractEmailsWithRoles = (sheet, row) => {
       const recipients = [];
+      const seenEmails = new Set(); // This memory box stops duplicates
 
       for (const col of sheet.emailCols || []) {
         const emailString = row.emails?.[col.id];
@@ -26,16 +28,21 @@ export async function GET(req) {
         if (col?.role === "payer" || (col?.title && col.title.toLowerCase().includes("payer"))) {
           role = "payer";
         }
+
         const splitEmails = emailString
           .split(/[;,]/)
           .map((email) => email.trim())
           .filter((email) => email.includes("@"));
 
         for (const address of splitEmails) {
-          recipients.push({ address, role });
+          const lowerAddress = address.toLowerCase();
+          // Only add the email if we haven't seen it yet for this row
+          if (!seenEmails.has(lowerAddress)) {
+            seenEmails.add(lowerAddress);
+            recipients.push({ address, role });
+          }
         }
       }
-
       return recipients;
     };
 
@@ -46,11 +53,7 @@ export async function GET(req) {
       if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
         const [year, month, day] = value.split("-").map(Number);
         const targetUtc = Date.UTC(year, month - 1, day);
-        const todayUtc = Date.UTC(
-          today.getFullYear(),
-          today.getMonth(),
-          today.getDate()
-        );
+        const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
         return Math.round((targetUtc - todayUtc) / (1000 * 60 * 60 * 24));
       }
 
@@ -68,54 +71,82 @@ export async function GET(req) {
 
         if (emailsWithRoles.length === 0) continue;
 
-        // --- SCAN 1: DUE DATES ---
         for (const col of (sheet.dueTypes || [])) {
-          if (row.statuses?.[col.id] === "Cleared" || !row.dueDates?.[col.id]) continue;
-          await processReminders(col, row.dueDates[col.id], row.project, sheet.name, emailsWithRoles, baseUrl, false);
+          const status = row.statuses?.[col.id];
+          const dueDate = row.dueDates?.[col.id];
+
+          if (!dueDate || status === "Cleared") continue;
+          
+          // Passing the whole 'row' and 'sheet' objects now!
+          await processReminders(col, dueDate, row, sheet, emailsWithRoles, baseUrl, false);
         }
 
-        // --- SCAN 2: REPORT DATES ---
         for (const col of (sheet.reportCols || [])) {
-          if (row.reportStatuses?.[col.id] === "Cleared" || !row.reportDates?.[col.id]) continue;
-          await processReminders(col, row.reportDates[col.id], row.project, sheet.name, emailsWithRoles, baseUrl, true);
+          const status = row.reportStatuses?.[col.id];
+          const reportDate = row.reportDates?.[col.id];
+
+          if (!reportDate || status === "Cleared") continue;
+
+          // Passing the whole 'row' and 'sheet' objects now!
+          await processReminders(col, reportDate, row, sheet, emailsWithRoles, baseUrl, true);
         }
       }
     }
 
-    async function processReminders(col, dateValue, projectName, sheetName, emails, baseUrl, isReport) {
+    async function processReminders(col, dateValue, row, sheet, emails, baseUrl, isReport) {
       const diffDays = getDateDiffDays(dateValue);
-      const schedule = col.reminderDays || [30, 17, 7, 3];
+      const rawSchedule = col.reminderDays || [30, 17, 7, 3];
+      const schedule = rawSchedule.map(Number); 
+
+      console.log(`\n=> Checking: ${row.project} | ${col.title} (${isReport ? "Report" : "Due Date"})`);
+      console.log(`   Target Date: ${dateValue}`);
+      console.log(`   Days Away: ${diffDays}`);
+      console.log(`   Trigger Schedule: [${schedule.join(", ")}]`);
 
       if (diffDays !== null && schedule.includes(diffDays)) {
+        console.log(`   ✅ MATCH! Sending emails...`);
         for (const { address, role } of emails) {
           let customMessage = "";
           if (isReport) {
-            customMessage = `${projectName} - ${col.title} report is due on ${dateValue}.`;
+            customMessage = `${row.project} - ${col.title} report is due on ${dateValue}.`;
           } else if (role === "payer") {
-            customMessage = `${projectName} - ${col.title} is pending the last date will be on ${dateValue}.`;
+            customMessage = `${row.project} - ${col.title} is pending the last date will be on ${dateValue}.`;
           } else {
-            customMessage = `${projectName} - ${col.title} needs to be received on ${dateValue}.`;
+            customMessage = `${row.project} - ${col.title} needs to be received on ${dateValue}.`;
           }
 
           try {
+            // --- FIX 2: SENDING THE IDs FOR THE BUTTONS ---
             const response = await fetch(`${baseUrl}/api/send-email`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 to: address,
-                project: projectName,
-                sheetName,
-                type: customMessage
+                project: row.project,
+                sheetName: sheet.name,
+                type: customMessage,
+                role: role,
+                sheetId: sheet._id.toString(),
+                rowId: row.id.toString(),
+                colId: col.id.toString(),
+                isReport: isReport,
+                baseUrl: baseUrl
               })
             });
 
             if (response.ok) {
               emailsSent++;
+              console.log(`   ✉️  Sent to: ${address} as [${role}]`);
             }
           } catch (err) {
-            console.error(`Network error sending to ${address}:`, err);
+            console.error(`   ❌ Network error sending to ${address}:`, err);
           }
+
+          // --- FIX 3: SPEED LIMIT (Wait 1.5 seconds between emails) ---
+          await new Promise(resolve => setTimeout(resolve, 1500));
         }
+      } else {
+         console.log(`   ⏳ No Match. ${diffDays} days is not in the schedule.`);
       }
     }
 

@@ -28,7 +28,13 @@ export async function POST(req) {
 
     if (Array.isArray(body)) {
       await History.deleteMany({});
-      savedHistory = await History.insertMany(body);
+
+      const cleanData = body.map((item) => {
+        const { _id, ...rest } = item;
+        return rest;
+      });
+
+      savedHistory = await History.insertMany(cleanData);
     } else {
       delete body._id;
       savedHistory = await History.create(body);

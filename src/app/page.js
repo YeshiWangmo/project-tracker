@@ -142,13 +142,19 @@ export default function Home() {
     if (user) { setIsLoggedIn(true); setCurrentUser(user); } else { alert("Invalid Credentials"); }
   };
 
-  const triggerEmail = async (emailAddr, project, type) => {
+  const triggerEmail = async (emailAddr, project, type, options = {}) => {
     if (!emailAddr || !emailAddr.includes("@")) return;
     try {
       await fetch("/api/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to: emailAddr, project, sheetName: activeSheet?.name || "Tracker", type })
+        body: JSON.stringify({
+          to: emailAddr,
+          project,
+          sheetName: activeSheet?.name || "Tracker",
+          type,
+          ...options
+        })
       });
       setHistory(prev => [{
         id: Date.now(), recipient: emailAddr, project, type,
@@ -169,12 +175,16 @@ export default function Home() {
         role = "payer";
       }
 
+      console.log(`\n[UI] Checking Column: ${col.title || "Unknown"}`);
+      console.log(`[UI] DB Role: ${col.role || "undefined"}, Assigned: ${role}`);
+
       emailString
         .split(/[;,]/)
         .map(email => email.trim())
         .filter(email => email.includes("@"))
         .forEach(address => {
           recipients.push({ address, role });
+          console.log(`[UI] => Sending to: ${address} as [${role}]`);
         });
     });
 
@@ -655,7 +665,14 @@ export default function Home() {
                               <button onClick={() => {
                                   if(!row.startDate) return alert("Please select a Start Date first.");
                                   const msg = `This is a message from the MoF, Bhutan. ${row.project} has started, now you will be receiving the notification of this from now on.`;
-                                  getRowRecipients(row, emailCols).forEach(({ address }) => triggerEmail(address, row.project, msg));
+                                  getRowRecipients(row, emailCols).forEach(({ address, role }) =>
+                                    triggerEmail(address, row.project, msg, {
+                                      role,
+                                      sheetId: activeSheet?._id,
+                                      rowId: row.id,
+                                      baseUrl: window.location.origin
+                                    })
+                                  );
                                   setSheets(sheets.map(s => s.id === activeSheetId ? {...s, rows: s.rows.map(r => r.id === row.id ? {...r, hasStarted: true} : r)} : s));
                                 }} className="w-full py-2 rounded-lg text-[8px] font-black tracking-widest border transition-all bg-blue-500 text-white border-blue-600 hover:bg-blue-600 shadow-sm">START PROJECT</button>
                             ) : (
@@ -745,7 +762,16 @@ export default function Home() {
                                     const next = status === "Pending" ? "Cleared" : "Pending";
                                     setSheets(sheets.map(s => s.id === activeSheetId ? {...s, rows: s.rows.map(r => r.id === row.id ? {...r, statuses: {...r.statuses, [col.id]: next}} : r)} : s));
                                     logActivity(row.project, `Marked ${col.title} as ${next}`);
-                                    if(next === "Cleared") getRowRecipients(row, emailCols).forEach(({ address }) => triggerEmail(address, row.project, `${col.title} CLEARED`));
+                                    if(next === "Cleared") getRowRecipients(row, emailCols).forEach(({ address, role }) =>
+                                      triggerEmail(address, row.project, `${col.title} CLEARED`, {
+                                        role,
+                                        sheetId: activeSheet?._id,
+                                        rowId: row.id,
+                                        colId: col.id,
+                                        isReport: false,
+                                        baseUrl: window.location.origin
+                                      })
+                                    );
                                   }} className={`w-full py-2 rounded-lg text-[9px] font-black tracking-widest border transition-all ${status === 'Cleared' ? 'bg-green-500 text-white border-green-600' : 'bg-white text-red-500 border-red-100'}`}>
                                   {status.toUpperCase()}
                                 </button>
@@ -766,7 +792,16 @@ export default function Home() {
                                     logActivity(row.project, `Marked ${col.title} as ${next}`);
                                     if(next === "Cleared") {
                                       const stopMsg = `${row.project} notification will stop from now on / will not receive.`;
-                                      getRowRecipients(row, emailCols).forEach(({ address }) => triggerEmail(address, row.project, stopMsg));
+                                      getRowRecipients(row, emailCols).forEach(({ address, role }) =>
+                                        triggerEmail(address, row.project, stopMsg, {
+                                          role,
+                                          sheetId: activeSheet?._id,
+                                          rowId: row.id,
+                                          colId: col.id,
+                                          isReport: true,
+                                          baseUrl: window.location.origin
+                                        })
+                                      );
                                     }
                                   }} className={`w-full py-2 rounded-lg text-[9px] font-black tracking-widest border transition-all ${status === 'Cleared' ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-white text-indigo-500 border-indigo-200 shadow-sm'}`}>
                                   {status === "Cleared" ? "SUBMITTED" : "PENDING"}
