@@ -22,7 +22,10 @@ export async function GET(req) {
         const emailString = row.emails?.[col.id];
         if (typeof emailString !== "string" || emailString.trim() === "") continue;
 
-        const role = col?.role === "payer" ? "payer" : "receiver";
+        let role = "receiver";
+        if (col?.role === "payer" || (col?.title && col.title.toLowerCase().includes("payer"))) {
+          role = "payer";
+        }
         const splitEmails = emailString
           .split(/[;,]/)
           .map((email) => email.trim())
