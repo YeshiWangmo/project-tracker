@@ -164,15 +164,17 @@ export default function Home() {
       const emailString = row.emails?.[col.id];
       if (typeof emailString !== "string" || !emailString.trim()) return;
 
+      let role = "receiver";
+      if (col?.role === "payer" || (col?.title && col.title.toLowerCase().includes("payer"))) {
+        role = "payer";
+      }
+
       emailString
         .split(/[;,]/)
         .map(email => email.trim())
         .filter(email => email.includes("@"))
         .forEach(address => {
-          recipients.push({
-            address,
-            role: col.role === "payer" ? "payer" : "receiver"
-          });
+          recipients.push({ address, role });
         });
     });
 
