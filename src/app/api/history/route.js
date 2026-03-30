@@ -1,19 +1,6 @@
 import { NextResponse } from "next/server";
-import mongoose from "mongoose";
-import History from "@/models/History"; // Adjust this path if your alias is different
-
-// Helper function to ensure database connection
-const connectDB = async () => {
-  if (mongoose.connection.readyState >= 1) {
-    return;
-  }
-  try {
-    await mongoose.connect(process.env.MONGODB_URI);
-    console.log("MongoDB connected successfully");
-  } catch (error) {
-    console.error("MongoDB connection error:", error);
-  }
-};
+import connectMongo from "../../../lib/mongodb";
+import History from "../../../models/History";
 
 // Tells Vercel not to cache this API route so you always get live data
 export const dynamic = "force-dynamic";
@@ -21,7 +8,7 @@ export const dynamic = "force-dynamic";
 // Handles GET requests (Fetching the history)
 export async function GET() {
   try {
-    await connectDB();
+    await connectMongo();
     // Fetch all history records, sorted by newest first
     const historyData = await History.find({}).sort({ createdAt: -1 });
     return NextResponse.json(historyData, { status: 200 });
@@ -32,14 +19,22 @@ export async function GET() {
 }
 
 // Handles POST requests (Adding new history)
-export async function POST(request) {
+export async function POST(req) {
   try {
-    await connectDB();
-    const body = await request.json();
-    
-    // Create the new history record in MongoDB
-    const newHistory = await History.create(body);
-    return NextResponse.json(newHistory, { status: 201 });
+    await connectMongo();
+    const body = await req.json();
+
+    let savedHistory;
+
+    if (Array.isArray(body)) {
+      await History.deleteMany({});
+      savedHistory = await History.insertMany(body);
+    } else {
+      delete body._id;
+      savedHistory = await History.create(body);
+    }
+
+    return NextResponse.json(savedHistory, { status: 201 });
   } catch (error) {
     console.error("POST History Error:", error);
     return NextResponse.json({ error: "Failed to create history" }, { status: 500 });
