@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 
 export default function Home() {
+  const appBaseUrl = "https://project-tracker-nine-phi.vercel.app";
   const [sheets, setSheets] = useState([]);
   const [activeSheetId, setActiveSheetId] = useState(null);
   const [history, setHistory] = useState([]);
@@ -670,7 +671,7 @@ export default function Home() {
                                       role,
                                       sheetId: activeSheet?._id,
                                       rowId: row.id,
-                                      baseUrl: window.location.origin
+                                      baseUrl: appBaseUrl
                                     })
                                   );
                                   setSheets(sheets.map(s => s.id === activeSheetId ? {...s, rows: s.rows.map(r => r.id === row.id ? {...r, hasStarted: true} : r)} : s));
@@ -769,7 +770,7 @@ export default function Home() {
                                         rowId: row.id,
                                         colId: col.id,
                                         isReport: false,
-                                        baseUrl: window.location.origin
+                                        baseUrl: appBaseUrl
                                       })
                                     );
                                   }} className={`w-full py-2 rounded-lg text-[9px] font-black tracking-widest border transition-all ${status === 'Cleared' ? 'bg-green-500 text-white border-green-600' : 'bg-white text-red-500 border-red-100'}`}>
@@ -799,7 +800,7 @@ export default function Home() {
                                           rowId: row.id,
                                           colId: col.id,
                                           isReport: true,
-                                          baseUrl: window.location.origin
+                                          baseUrl: appBaseUrl
                                         })
                                       );
                                     }

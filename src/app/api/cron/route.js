@@ -11,9 +11,7 @@ export async function GET(req) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const host = req.headers.get("host") || "localhost:3000";
-    const protocol = host.includes("localhost") ? "http" : "https";
-    const baseUrl = `${protocol}://${host}`;
+    const baseUrl = "https://project-tracker-nine-phi.vercel.app";
 
     // --- FIX 1: DEDUPLICATE EMAILS ---
     const extractEmailsWithRoles = (sheet, row) => {
