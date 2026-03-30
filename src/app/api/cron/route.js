@@ -23,19 +23,10 @@ export async function GET(req) {
 
         for (const [colId, emailString] of Object.entries(row.emails || {})) {
           if (typeof emailString === "string" && emailString.trim() !== "") {
-            let role = "receiver";
-            let colTitle = "";
-
             const colDef = (sheet.emailCols || []).find(
               (c) => c?.id?.toString() === colId
             );
-            if (colDef?.title) {
-              colTitle = colDef.title;
-            }
-
-            if (colTitle.toLowerCase().includes("payer")) {
-              role = "payer";
-            }
+            const role = colDef?.role === "payer" ? "payer" : "receiver";
 
             const splitEmails = emailString.split(",").map(e => e.trim());
             for (const email of splitEmails) {
