@@ -11,7 +11,10 @@ export async function GET(req) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const baseUrl = "https://project-tracker-nine-phi.vercel.app";
+    const appBaseUrl = "https://project-tracker-nine-phi.vercel.app";
+    const host = req.headers.get("host") || "localhost:3000";
+    const protocol = host.includes("localhost") ? "http" : "https";
+    const senderBaseUrl = `${protocol}://${host}`;
 
     // --- FIX 1: DEDUPLICATE EMAILS ---
     const extractEmailsWithRoles = (sheet, row) => {
@@ -76,7 +79,7 @@ export async function GET(req) {
           if (!dueDate || status === "Cleared") continue;
           
           // Passing the whole 'row' and 'sheet' objects now!
-          await processReminders(col, dueDate, row, sheet, emailsWithRoles, baseUrl, false);
+          await processReminders(col, dueDate, row, sheet, emailsWithRoles, senderBaseUrl, appBaseUrl, false);
         }
 
         for (const col of (sheet.reportCols || [])) {
@@ -86,12 +89,12 @@ export async function GET(req) {
           if (!reportDate || status === "Cleared") continue;
 
           // Passing the whole 'row' and 'sheet' objects now!
-          await processReminders(col, reportDate, row, sheet, emailsWithRoles, baseUrl, true);
+          await processReminders(col, reportDate, row, sheet, emailsWithRoles, senderBaseUrl, appBaseUrl, true);
         }
       }
     }
 
-    async function processReminders(col, dateValue, row, sheet, emails, baseUrl, isReport) {
+    async function processReminders(col, dateValue, row, sheet, emails, senderBaseUrl, appBaseUrl, isReport) {
       const diffDays = getDateDiffDays(dateValue);
       const rawSchedule = col.reminderDays || [30, 17, 7, 3];
       const schedule = rawSchedule.map(Number); 
@@ -115,7 +118,7 @@ export async function GET(req) {
 
           try {
             // --- FIX 2: SENDING THE IDs FOR THE BUTTONS ---
-            const response = await fetch(`${baseUrl}/api/send-email`, {
+            const response = await fetch(`${senderBaseUrl}/api/send-email`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -128,13 +131,16 @@ export async function GET(req) {
                 rowId: row.id.toString(),
                 colId: col.id.toString(),
                 isReport: isReport,
-                baseUrl: baseUrl
+                baseUrl: appBaseUrl
               })
             });
 
             if (response.ok) {
               emailsSent++;
               console.log(`   ✉️  Sent to: ${address} as [${role}]`);
+            } else {
+              const errorText = await response.text();
+              console.error(`   Email send failed for ${address}: ${response.status} ${response.statusText} - ${errorText}`);
             }
           } catch (err) {
             console.error(`   ❌ Network error sending to ${address}:`, err);
