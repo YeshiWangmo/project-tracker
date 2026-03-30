@@ -15,27 +15,53 @@ export async function GET(req) {
     const protocol = host.includes("localhost") ? "http" : "https";
     const baseUrl = `${protocol}://${host}`;
 
+    const extractEmailsWithRoles = (sheet, row) => {
+      const recipients = [];
+
+      for (const col of sheet.emailCols || []) {
+        const emailString = row.emails?.[col.id];
+        if (typeof emailString !== "string" || emailString.trim() === "") continue;
+
+        const role = col?.role === "payer" ? "payer" : "receiver";
+        const splitEmails = emailString
+          .split(/[;,]/)
+          .map((email) => email.trim())
+          .filter((email) => email.includes("@"));
+
+        for (const address of splitEmails) {
+          recipients.push({ address, role });
+        }
+      }
+
+      return recipients;
+    };
+
+    const getDateDiffDays = (dateValue) => {
+      const value = typeof dateValue === "string" ? dateValue.trim() : "";
+      if (!value) return null;
+
+      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        const [year, month, day] = value.split("-").map(Number);
+        const targetUtc = Date.UTC(year, month - 1, day);
+        const todayUtc = Date.UTC(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate()
+        );
+        return Math.round((targetUtc - todayUtc) / (1000 * 60 * 60 * 24));
+      }
+
+      const targetDate = new Date(dateValue);
+      if (Number.isNaN(targetDate.getTime())) return null;
+      targetDate.setHours(0, 0, 0, 0);
+      return Math.round((targetDate - today) / (1000 * 60 * 60 * 24));
+    };
+
     for (const sheet of sheets) {
       const safeRows = Array.isArray(sheet.rows) ? sheet.rows : [];
       
       for (const row of safeRows) {
-        const emailsWithRoles = [];
-
-        for (const [colId, emailString] of Object.entries(row.emails || {})) {
-          if (typeof emailString === "string" && emailString.trim() !== "") {
-            const colDef = (sheet.emailCols || []).find(
-              (c) => c?.id?.toString() === colId
-            );
-            const role = colDef?.role === "payer" ? "payer" : "receiver";
-
-            const splitEmails = emailString.split(",").map(e => e.trim());
-            for (const email of splitEmails) {
-              if (email.includes("@")) {
-                emailsWithRoles.push({ address: email, role });
-              }
-            }
-          }
-        }
+        const emailsWithRoles = extractEmailsWithRoles(sheet, row);
 
         if (emailsWithRoles.length === 0) continue;
 
@@ -54,12 +80,10 @@ export async function GET(req) {
     }
 
     async function processReminders(col, dateValue, projectName, sheetName, emails, baseUrl, isReport) {
-      const targetDate = new Date(dateValue);
-      targetDate.setHours(0, 0, 0, 0);
-      const diffDays = Math.ceil((targetDate - today) / (1000 * 60 * 60 * 24));
+      const diffDays = getDateDiffDays(dateValue);
       const schedule = col.reminderDays || [30, 17, 7, 3];
 
-      if (schedule.includes(diffDays)) {
+      if (diffDays !== null && schedule.includes(diffDays)) {
         for (const { address, role } of emails) {
           let customMessage = "";
           if (isReport) {

@@ -157,6 +157,28 @@ export default function Home() {
     } catch (e) { console.error(e); }
   };
 
+  const getRowRecipients = (row, emailColumns = []) => {
+    const recipients = [];
+
+    emailColumns.forEach(col => {
+      const emailString = row.emails?.[col.id];
+      if (typeof emailString !== "string" || !emailString.trim()) return;
+
+      emailString
+        .split(/[;,]/)
+        .map(email => email.trim())
+        .filter(email => email.includes("@"))
+        .forEach(address => {
+          recipients.push({
+            address,
+            role: col.role === "payer" ? "payer" : "receiver"
+          });
+        });
+    });
+
+    return recipients;
+  };
+
   // --- NEW AUDIT LOG HELPER ---
   const logActivity = (projectName, actionMessage) => {
     const newLog = {
@@ -631,14 +653,7 @@ export default function Home() {
                               <button onClick={() => {
                                   if(!row.startDate) return alert("Please select a Start Date first.");
                                   const msg = `This is a message from the MoF, Bhutan. ${row.project} has started, now you will be receiving the notification of this from now on.`;
-                                  Object.values(row.emails || {}).forEach(emailString => {
-                                    if (emailString) {
-                                      emailString.split(",").forEach(em => {
-                                        const cleanEmail = em.trim();
-                                        if (cleanEmail) triggerEmail(cleanEmail, row.project, msg);
-                                      });
-                                    }
-                                  });
+                                  getRowRecipients(row, emailCols).forEach(({ address }) => triggerEmail(address, row.project, msg));
                                   setSheets(sheets.map(s => s.id === activeSheetId ? {...s, rows: s.rows.map(r => r.id === row.id ? {...r, hasStarted: true} : r)} : s));
                                 }} className="w-full py-2 rounded-lg text-[8px] font-black tracking-widest border transition-all bg-blue-500 text-white border-blue-600 hover:bg-blue-600 shadow-sm">START PROJECT</button>
                             ) : (
@@ -728,7 +743,7 @@ export default function Home() {
                                     const next = status === "Pending" ? "Cleared" : "Pending";
                                     setSheets(sheets.map(s => s.id === activeSheetId ? {...s, rows: s.rows.map(r => r.id === row.id ? {...r, statuses: {...r.statuses, [col.id]: next}} : r)} : s));
                                     logActivity(row.project, `Marked ${col.title} as ${next}`);
-                                    if(next === "Cleared") Object.values(row.emails || {}).forEach(em => triggerEmail(em, row.project, `${col.title} CLEARED`));
+                                    if(next === "Cleared") getRowRecipients(row, emailCols).forEach(({ address }) => triggerEmail(address, row.project, `${col.title} CLEARED`));
                                   }} className={`w-full py-2 rounded-lg text-[9px] font-black tracking-widest border transition-all ${status === 'Cleared' ? 'bg-green-500 text-white border-green-600' : 'bg-white text-red-500 border-red-100'}`}>
                                   {status.toUpperCase()}
                                 </button>
@@ -749,14 +764,7 @@ export default function Home() {
                                     logActivity(row.project, `Marked ${col.title} as ${next}`);
                                     if(next === "Cleared") {
                                       const stopMsg = `${row.project} notification will stop from now on / will not receive.`;
-                                      Object.values(row.emails || {}).forEach(emailString => {
-                                        if (emailString) {
-                                          emailString.split(",").forEach(em => {
-                                            const cleanEmail = em.trim();
-                                            if (cleanEmail) triggerEmail(cleanEmail, row.project, stopMsg);
-                                          });
-                                        }
-                                      });
+                                      getRowRecipients(row, emailCols).forEach(({ address }) => triggerEmail(address, row.project, stopMsg));
                                     }
                                   }} className={`w-full py-2 rounded-lg text-[9px] font-black tracking-widest border transition-all ${status === 'Cleared' ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-white text-indigo-500 border-indigo-200 shadow-sm'}`}>
                                   {status === "Cleared" ? "SUBMITTED" : "PENDING"}
