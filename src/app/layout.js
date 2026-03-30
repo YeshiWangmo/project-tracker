@@ -1,3 +1,4 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
 export const metadata = {
@@ -7,11 +8,12 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
-      {/* Add suppressHydrationWarning here so Next.js ignores Grammarly! */}
-      <body suppressHydrationWarning className="bg-gray-50 text-black antialiased">
-        {children}
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en">
+        <body suppressHydrationWarning className="bg-gray-50 text-black antialiased">
+          {children}
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }
