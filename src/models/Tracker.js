@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 
 const TrackerSchema = new mongoose.Schema({
   id: { type: Number, required: true }, // Removed 'unique: true' to prevent auto-save crashes
+  userId: { type: String, required: true },
+  userEmail: { type: String, required: true },
   name: { type: String, required: true },
   
   // Changed from 'Mixed' to 'Array' so Mongoose actually tracks your changes

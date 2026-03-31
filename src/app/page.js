@@ -1,5 +1,6 @@
 ﻿"use client";
 import { useState, useEffect } from "react";
+import { UserButton, useUser } from "@clerk/nextjs";
 
 export default function Home() {
   const appBaseUrl = "https://project-tracker-nine-phi.vercel.app";
@@ -10,11 +11,8 @@ export default function Home() {
   const [view, setView] = useState("dashboard");
   const [highlightMode, setHighlightMode] = useState(null);
 
-  // AUTH & MODAL STATE
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [users, setUsers] = useState([]);
-  const [loginForm, setLoginForm] = useState({ username: "", password: "" });
+  // CLERK AUTH STATE
+  const { user, isLoaded: clerkLoaded } = useUser();
   
   // UPDATED MODAL STATE
   const [modal, setModal] = useState({ show: false, type: "", title: "", value: "", extra: "", role: "user", editId: null, targetId: null, targetSheetId: null });
@@ -69,12 +67,6 @@ export default function Home() {
           setActiveSheetId(sheetsToLoad[0].id);
         }
 
-        // Fetch Users
-        const resUsers = await fetch("/api/users");
-        const dbUsers = await resUsers.json();
-        if (Array.isArray(dbUsers) && dbUsers.length > 0) setUsers(dbUsers);
-        else setUsers([{ id: 1, username: "admin", password: "password123", role: "admin" }]);
-
         // 🚨 FIX: TEMPORARILY DISABLED HISTORY FETCH TO PREVENT CRASH
         const resHistory = await fetch("/api/history");
         const dbHistory = await resHistory.json();
@@ -99,7 +91,6 @@ export default function Home() {
       const saveTimer = setTimeout(async () => {
         try {
           await fetch("/api/tracker", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sheets) });
-          await fetch("/api/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(users) });
           
           // 🚨 FIX: TEMPORARILY DISABLED HISTORY SAVE TO PREVENT CRASH
           await fetch("/api/history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(history) });
@@ -113,7 +104,7 @@ export default function Home() {
       }
       return () => clearTimeout(saveTimer);
     }
-  }, [sheets, activeSheetId, history, users, isLoaded]);
+  }, [sheets, activeSheetId, history, isLoaded]);
 
   const activeSheet = sheets.find(s => s.id === activeSheetId) || sheets[0];
   const rows = activeSheet?.rows || [];
@@ -137,11 +128,13 @@ export default function Home() {
     }
   });
 
-  const handleLogin = (e) => {
-    e.preventDefault();
-    const user = users.find(u => u.username === loginForm.username && u.password === loginForm.password);
-    if (user) { setIsLoggedIn(true); setCurrentUser(user); } else { alert("Invalid Credentials"); }
-  };
+  const currentUserLabel =
+    user?.fullName ||
+    user?.username ||
+    user?.primaryEmailAddress?.emailAddress ||
+    "Clerk User";
+  const userEmail = user?.primaryEmailAddress?.emailAddress || "";
+  const isAdminUser = userEmail === process.env.NEXT_PUBLIC_ADMIN_EMAIL;
 
   const triggerEmail = async (emailAddr, project, type, options = {}) => {
     if (!emailAddr || !emailAddr.includes("@")) return;
@@ -159,7 +152,7 @@ export default function Home() {
       });
       setHistory(prev => [{
         id: Date.now(), recipient: emailAddr, project, type,
-        timestamp: new Date().toLocaleString(), user: currentUser?.username || "System Auto"
+        timestamp: new Date().toLocaleString(), user: currentUserLabel
       }, ...prev]);
     } catch (e) { console.error(e); }
   };
@@ -197,7 +190,7 @@ export default function Home() {
     const newLog = {
       id: Date.now(),
       timestamp: new Date().toLocaleString(),
-      user: currentUser?.username || "Admin",
+      user: currentUserLabel,
       project: projectName || "System",
       type: actionMessage
     };
@@ -206,8 +199,6 @@ export default function Home() {
 
   const confirmModal = () => {
     if (modal.type === "RENAME_SHEET") setSheets(sheets.map(s => s.id === activeSheetId ? { ...s, name: modal.value } : s));
-    if (modal.type === "ADD_USER") setUsers([...users, { id: Date.now(), username: modal.value, password: modal.extra, role: modal.role || "user" }]);
-    if (modal.type === "EDIT_USER") setUsers(users.map(u => u.id === modal.editId ? { ...u, username: modal.value, password: modal.extra, role: modal.role } : u));
     if (modal.type === "DELETE_SHEET") {
       const remaining = sheets.filter(s => s.id !== activeSheetId);
       if (remaining.length > 0) { setSheets(remaining); setActiveSheetId(remaining[0].id); }
@@ -268,22 +259,7 @@ export default function Home() {
     setModal({ show: false, type: "", title: "", value: "", extra: "", role: "user", editId: null, targetId: null, targetSheetId: null });
   };
 
-  if (!isLoaded) return null;
-
-  if (!isLoggedIn) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0f172a] p-6">
-        <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl w-full max-w-md">
-          <h1 className="text-4xl font-black text-center mb-8 text-slate-900 tracking-tighter">AdminHub</h1>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input type="text" placeholder="Username" className="w-full bg-slate-50 border-none rounded-2xl px-5 py-4 outline-none focus:ring-2 focus:ring-blue-500 font-medium" value={loginForm.username} onChange={e => setLoginForm({...loginForm, username: e.target.value})}/>
-            <input type="password" placeholder="Password" className="w-full bg-slate-50 border-none rounded-2xl px-5 py-4 outline-none focus:ring-2 focus:ring-blue-500 font-medium" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})}/>
-            <button className="w-full bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg hover:bg-blue-700 transition transform active:scale-95">Sign In</button>
-          </form>
-        </div>
-      </div>
-    );
-  }
+  if (!isLoaded || !clerkLoaded) return null;
 
   // === MASTER EXPORT: ALL DATA IN SYSTEM ===
   const exportDataToCSV = () => {
@@ -413,16 +389,6 @@ export default function Home() {
               </p>
             )}
             
-            {(modal.type === "ADD_USER" || modal.type === "EDIT_USER") && (
-              <>
-                <input placeholder="Password" type="text" className="w-full bg-slate-50 p-4 rounded-xl outline-none border border-slate-100 mb-4" value={modal.extra} onChange={e => setModal({...modal, extra: e.target.value})}/>
-                <select className="w-full bg-slate-50 p-4 rounded-xl outline-none border border-slate-100 mb-4 font-bold text-sm" value={modal.role || "user"} onChange={e => setModal({...modal, role: e.target.value})}>
-                  <option value="user">Basic User</option>
-                  <option value="admin">Admin (Full Access)</option>
-                </select>
-              </>
-            )}
-            
             {(modal.type === "ADD_COLUMN" || modal.type === "ADD_REPORT_COLUMN") && (
               <select className="w-full bg-slate-50 p-4 rounded-xl outline-none border border-slate-100 mb-4 font-bold text-sm" value={modal.extra} onChange={e => setModal({...modal, extra: e.target.value})}>
                 <option value="default">Default (30, 17, 7, 3 days)</option>
@@ -450,7 +416,9 @@ export default function Home() {
       )}
 
       <aside className="w-64 bg-[#0f172a] text-white p-8 flex flex-col gap-3">
-        <div className="text-2xl font-black mb-8 text-blue-500 tracking-tighter">AdminHub</div>
+        <div className="text-2xl font-black mb-8 text-blue-500 tracking-tighter">
+          {isAdminUser ? "Admin Hub" : "Project Tracker"}
+        </div>
         
         {/* Dashboard */}
         <button onClick={() => setView("dashboard")} className={`w-full flex items-center justify-start gap-3 px-4 py-3 rounded-xl font-bold transition transform active:scale-95 text-sm ${view === 'dashboard' ? 'bg-blue-600 shadow-lg shadow-blue-900/50 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
@@ -476,17 +444,9 @@ export default function Home() {
           Audit Log
         </button>
 
-        {/* Users (Admin Only) */}
-        {currentUser?.role === 'admin' && (
-          <button onClick={() => setView("users")} className={`w-full flex items-center justify-start gap-3 px-4 py-3 rounded-xl font-bold transition transform active:scale-95 text-sm ${view === 'users' ? 'bg-blue-600 shadow-lg shadow-blue-900/50 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" width="20" height="20" className="shrink-0">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a6.375 6.375 0 0 1 12.75 0v.109A12.318 12.318 0 0 1 9.374 21c-2.331 0-4.512-.645-6.374-1.766Z" />
-            </svg>
-            Users
-          </button>
-        )}
-        
-        <button onClick={() => setIsLoggedIn(false)} className="mt-auto text-xs font-bold text-red-400 px-5">Logout</button>
+        <div className="mt-auto px-4 pb-4">
+          <UserButton showName={true} />
+        </div>
       </aside>
 
       <main className="flex-1 p-10 overflow-auto">
@@ -538,6 +498,18 @@ export default function Home() {
 
             <div className="flex justify-between items-center mb-8">
                <div className="flex gap-4 items-center">
+                {activeSheet && (
+                  <div className="mr-2">
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-2xl font-black text-slate-800">{activeSheet.name}</h2>
+                      {activeSheet.userEmail && (
+                        <span className="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-600">
+                          Owner: {activeSheet.userEmail}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {/* Custom Sheet Dropdown */}
                 <div className="relative" onClick={e => e.stopPropagation()}>
                   <button 
@@ -564,9 +536,12 @@ export default function Home() {
                             setContextMenu({ x: e.clientX, y: e.clientY, sheetId: s.id });
                             setShowSheetDropdown(false);
                           }}
-                          className={`px-4 py-2 text-sm font-bold cursor-pointer hover:bg-slate-50 transition-colors ${activeSheetId === s.id ? 'text-blue-600 bg-blue-50/50' : 'text-slate-700'}`}
+                          className={`px-4 py-2 cursor-pointer hover:bg-slate-50 transition-colors ${activeSheetId === s.id ? 'text-blue-600 bg-blue-50/50' : 'text-slate-700'}`}
                         >
-                          {s.name}
+                          <p className="text-sm font-bold">{s.name}</p>
+                          {s.userEmail && (
+                            <p className="mt-1 text-[10px] text-slate-400">Owner: {s.userEmail}</p>
+                          )}
                         </div>
                       ))}
                       <div className="border-t border-slate-100 mt-1 pt-1"></div>
@@ -921,7 +896,7 @@ export default function Home() {
                    ))}
                  </tbody>
                </table>
-             </div>
+             </div> 
           </div>
         )}
       </main>
