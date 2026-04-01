@@ -3,6 +3,46 @@ import { currentUser } from "@clerk/nextjs/server";
 import connectMongo from "../../../../lib/mongodb";
 import Tracker from "../../../../models/Tracker";
 
+function clearReminderKeysForChangedDates(existingRows = [], incomingRows = []) {
+  const existingRowsById = new Map(existingRows.map((row) => [String(row.id), row]));
+
+  return incomingRows.map((row) => {
+    const existingRow = existingRowsById.get(String(row.id));
+    if (!existingRow || !Array.isArray(row.sentReminderKeys)) {
+      return row;
+    }
+
+    let filteredKeys = [...row.sentReminderKeys];
+    const dateGroups = [
+      { type: "due", previous: existingRow.dueDates || {}, next: row.dueDates || {} },
+      { type: "report", previous: existingRow.reportDates || {}, next: row.reportDates || {} },
+    ];
+
+    for (const group of dateGroups) {
+      const colIds = new Set([
+        ...Object.keys(group.previous || {}),
+        ...Object.keys(group.next || {}),
+      ]);
+
+      for (const colId of colIds) {
+        const previousValue = group.previous?.[colId] || "";
+        const nextValue = group.next?.[colId] || "";
+
+        if (previousValue !== nextValue) {
+          filteredKeys = filteredKeys.filter(
+            (key) => !key.startsWith(`${group.type}:${colId}:`)
+          );
+        }
+      }
+    }
+
+    return {
+      ...row,
+      sentReminderKeys: filteredKeys,
+    };
+  });
+}
+
 async function authorizeUser(sheetId) {
   const user = await currentUser();
   if (!user) {
@@ -40,12 +80,16 @@ export async function PUT(req, { params }) {
 
     const body = await req.json();
     const { _id, userId, userEmail, ...updateData } = body;
+    const sanitizedRows = Array.isArray(updateData.rows)
+      ? clearReminderKeysForChangedDates(auth.sheet.rows || [], updateData.rows)
+      : updateData.rows;
 
     const updatedSheet = await Tracker.findByIdAndUpdate(
       id,
       {
         $set: {
           ...updateData,
+          rows: sanitizedRows,
           userId: auth.sheet.userId,
           userEmail: auth.sheet.userEmail,
         },

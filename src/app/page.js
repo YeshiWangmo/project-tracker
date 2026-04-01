@@ -35,8 +35,8 @@ export default function Home() {
     id: Date.now(),
     name: "Main Tracker",
     rows: [{ id: 1, project: "New Project", emails: {}, startDate: "", hasStarted: false, statuses: {}, dueDates: {}, reportStatuses: {}, reportDates: {} }],
-    dueTypes: [{ id: 101, title: "Phase 1", reminderDays: [30, 17, 7, 3], scheduleName: "Default (30,17,7,3)" }],
-    reportCols: [{ id: 301, title: "Loan Doc", reminderDays: [30, 17, 7, 3], scheduleName: "Default (30,17,7,3)" }],
+    dueTypes: [{ id: 101, title: "Phase 1", reminderDays: [30, 17, 7, 3, 0], scheduleName: "Default (30,17,7,3,0)" }],
+    reportCols: [{ id: 301, title: "Loan Doc", reminderDays: [30, 17, 7, 3, 0], scheduleName: "Default (30,17,7,3,0)" }],
     emailCols: [{ id: 201, title: "Stakeholder", role: "receiver" }]
   });
 
@@ -213,13 +213,13 @@ export default function Home() {
       setSheets(sheets.map(s => s.id === activeSheetId ? {...s, emailCols: [...(s.emailCols || []), { id: Date.now(), title: modal.value || "Email", role: modal.extra }]} : s));
     }
     if (modal.type === "ADD_COLUMN" || modal.type === "ADD_REPORT_COLUMN") {
-      let days = [30, 17, 7, 3];
-      let sName = "Default (30,17,7,3)";
-      if (modal.extra === "weekly") { days = [7]; sName = "Weekly"; }
-      if (modal.extra === "monthly") { days = [30]; sName = "Monthly"; }
-      if (modal.extra === "quarterly") { days = [90]; sName = "Quarterly"; }
-      if (modal.extra === "semi") { days = [180]; sName = "Semi-Annually"; }
-      if (modal.extra === "annually") { days = [365]; sName = "Annually"; }
+      let days = [30, 17, 7, 3, 0];
+      let sName = "Default (30,17,7,3,0)";
+      if (modal.extra === "weekly") { days = [7, 0]; sName = "Weekly + Due Date"; }
+      if (modal.extra === "monthly") { days = [30, 0]; sName = "Monthly + Due Date"; }
+      if (modal.extra === "quarterly") { days = [90, 0]; sName = "Quarterly + Due Date"; }
+      if (modal.extra === "semi") { days = [180, 0]; sName = "Semi-Annually + Due Date"; }
+      if (modal.extra === "annually") { days = [365, 0]; sName = "Annually + Due Date"; }
 
       setSheets(sheets.map(s => {
         if (s.id === activeSheetId) {
