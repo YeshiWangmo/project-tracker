@@ -183,6 +183,11 @@ export async function GET(req) {
     return NextResponse.json({ success: true, message: `Background scan complete. Sent ${emailsSent} emails.` });
   } catch (error) {
     console.error("Cron Error:", error);
-    return NextResponse.json({ error: "Failed background scan" }, { status: 500 });
+    // 🚨 This will now output the EXACT technical reason it crashed to your terminal
+    return NextResponse.json({ 
+      error: "System Crash", 
+      message: error.message, 
+      stack: error.stack 
+    }, { status: 500 });
   }
 }
