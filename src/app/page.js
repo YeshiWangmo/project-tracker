@@ -1,7 +1,6 @@
 ﻿"use client";
 import { useState, useEffect } from "react";
 import { UserButton, useUser } from "@clerk/nextjs";
-import { useUser } from "@clerk/nextjs";
 
 export default function Home() {
   const appBaseUrl = "https://project-tracker-nine-phi.vercel.app";
