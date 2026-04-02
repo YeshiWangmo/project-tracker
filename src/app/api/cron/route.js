@@ -33,10 +33,8 @@ export async function GET(req) {
     let emailsSent = 0;
     const todayParts = getTimeZoneDateParts(new Date(), APP_TIME_ZONE);
     const todayUtc = Date.UTC(todayParts.year, todayParts.month - 1, todayParts.day);
+    const appBaseUrl = "https://mof-project-tracker.vercel.app"; 
 
-    const appBaseUrl = "https://mof-project-tracker.vercel.app"; // Your actual domain
-
-    // 🚀 DIRECT EMAIL SENDER - Bypasses Vercel 404 error entirely
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -48,7 +46,6 @@ export async function GET(req) {
     const extractEmailsWithRoles = (sheet, row) => {
       const recipients = [];
       const seenEmails = new Set();
-
       for (const col of sheet.emailCols || []) {
         const emailString = row.emails?.[col.id];
         if (typeof emailString !== "string" || emailString.trim() === "") continue;
@@ -58,11 +55,7 @@ export async function GET(req) {
           role = "payer";
         }
 
-        const splitEmails = emailString
-          .split(/[;,]/)
-          .map((email) => email.trim())
-          .filter((email) => email.includes("@"));
-
+        const splitEmails = emailString.split(/[;,]/).map((e) => e.trim()).filter((e) => e.includes("@"));
         for (const address of splitEmails) {
           const lowerAddress = address.toLowerCase();
           if (!seenEmails.has(lowerAddress)) {
@@ -77,13 +70,11 @@ export async function GET(req) {
     const getDateDiffDays = (dateValue) => {
       const value = typeof dateValue === "string" ? dateValue.trim() : "";
       if (!value) return null;
-
       if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
         const [year, month, day] = value.split("-").map(Number);
         const targetUtc = Date.UTC(year, month - 1, day);
         return Math.round((targetUtc - todayUtc) / (1000 * 60 * 60 * 24));
       }
-
       const targetDate = new Date(dateValue);
       if (Number.isNaN(targetDate.getTime())) return null;
       const targetParts = getTimeZoneDateParts(targetDate, APP_TIME_ZONE);
@@ -102,8 +93,7 @@ export async function GET(req) {
         for (const col of sheet.dueTypes || []) {
           const status = row.statuses?.[col.id];
           const dueDate = row.dueDates?.[col.id];
-
-          if (!dueDate || status === "Cleared") continue; // Still respects the "Cleared" status!
+          if (!dueDate || status === "Cleared") continue; 
 
           const didChange = await processReminders(col, dueDate, row, sheet, emailsWithRoles, appBaseUrl, false);
           sheetChanged = sheetChanged || didChange;
@@ -112,7 +102,6 @@ export async function GET(req) {
         for (const col of sheet.reportCols || []) {
           const status = row.reportStatuses?.[col.id];
           const reportDate = row.reportDates?.[col.id];
-
           if (!reportDate || status === "Cleared") continue;
 
           const didChange = await processReminders(col, reportDate, row, sheet, emailsWithRoles, appBaseUrl, true);
@@ -130,31 +119,10 @@ export async function GET(req) {
       const diffDays = getDateDiffDays(dateValue);
       let reminderSaved = false;
 
-      console.log(`\n=> Checking: ${row.project} | ${col.title}`);
-      
-      // ☢️ NUCLEAR OPTION ACTIVE: Date logic commented out to FORCE emails right now.
-      // const rawSchedule = col.reminderDays || [30, 17, 7, 3, 1, 0];
-      // const schedule = [...new Set([...rawSchedule.map(Number), 1, 0])];
-      // if (diffDays === null || !schedule.includes(diffDays)) { return false; }
-
-      console.log("   FORCING EMAIL SEND (Emergency override active)...");
-
       for (const { address, role } of emails) {
-        const reminderKey = [
-          isReport ? "report" : "due",
-          col.id,
-          dateValue,
-          diffDays,
-          role,
-          address.toLowerCase(),
-        ].join(":");
+        const reminderKey = [isReport ? "report" : "due", col.id, dateValue, diffDays, role, address.toLowerCase()].join(":");
 
-        if (!Array.isArray(row.sentReminderKeys)) {
-          row.sentReminderKeys = [];
-        }
-
-        // ☢️ NUCLEAR OPTION ACTIVE: Spam blocker disabled to FORCE emails.
-        // if (row.sentReminderKeys.includes(reminderKey)) { continue; }
+        if (!Array.isArray(row.sentReminderKeys)) row.sentReminderKeys = [];
 
         let customMessage = "";
         if (isReport) {
@@ -192,25 +160,21 @@ export async function GET(req) {
                 <p style="font-size: 16px; color: #334155;"><strong>Message:</strong> ${customMessage}</p>
                 ${actionButtons}
                 <hr style="margin: 20px 0; border: none; border-top: 1px solid #cbd5e1;" />
-                <p style="font-size: 12px; color: #94a3b8;">
-                  This is an automated notification from the MoF Project Tracker.
-                </p>
+                <p style="font-size: 12px; color: #94a3b8;">This is an automated notification from the MoF Project Tracker.</p>
               </div>
             `,
           };
 
+          // Removed the 1500ms delay completely so this fires instantly
           await transporter.sendMail(mailOptions);
           emailsSent++;
           row.sentReminderKeys.push(reminderKey);
           reminderSaved = true;
-          console.log(`   Sent successfully to: ${address}`);
+          console.log(`Sent successfully to: ${address}`);
         } catch (err) {
-          console.error(`   Email send failed for ${address}:`, err);
+          console.error(`Email send failed for ${address}:`, err);
         }
-
-        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
-
       return reminderSaved;
     }
 
