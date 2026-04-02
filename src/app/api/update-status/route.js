@@ -2,6 +2,23 @@ import { NextResponse } from "next/server";
 import connectMongo from "../../../lib/mongodb"; 
 import Tracker from "../../../models/Tracker"; 
 
+// Helper function to return beautiful error pages instead of plain text crashes
+function errorHtml(title, message) {
+  const html = `
+    <html>
+      <body style="font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f8fafc; margin: 0;">
+        <div style="background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; max-width: 400px; border-top: 4px solid #ef4444;">
+          <div style="font-size: 50px; margin-bottom: 10px;">⚠️</div>
+          <h1 style="color: #ef4444; margin-top: 0;">${title}</h1>
+          <p style="font-size: 16px; color: #475569; line-height: 1.5;">${message}</p>
+          <p style="color: #94a3b8; margin-top: 30px; font-size: 14px;">Please contact the administrator or try again.</p>
+        </div>
+      </body>
+    </html>
+  `;
+  return new NextResponse(html, { status: 400, headers: { 'Content-Type': 'text/html' } });
+}
+
 export async function GET(req) {
   try {
     // 1. Grab the IDs and the new Status from the URL the email generated
@@ -12,8 +29,15 @@ export async function GET(req) {
     const status = searchParams.get("status");
     const isReport = searchParams.get("isReport") === "true";
 
+    // 🔒 SECURITY CHECK 1: Ensure all parameters exist
     if (!sheetId || !rowId || !colId || !status) {
-      return new NextResponse("Missing required parameters", { status: 400 });
+      return errorHtml("Missing Information", "The link appears to be broken or incomplete.");
+    }
+
+    // 🔒 SECURITY CHECK 2: Prevent Database Injection (Only allow specific words)
+    const allowedStatuses = ["Cleared", "Pending"];
+    if (!allowedStatuses.includes(status)) {
+      return errorHtml("Invalid Action", "That status update is not allowed.");
     }
 
     await connectMongo();
@@ -21,13 +45,13 @@ export async function GET(req) {
     // 2. Find the tracker sheet
     const sheet = await Tracker.findById(sheetId);
     if (!sheet) {
-      return new NextResponse("Project Tracker not found", { status: 404 });
+      return errorHtml("Database Error", "Project Tracker database not found.");
     }
 
     // 3. Find the exact row
     const rowIndex = sheet.rows.findIndex(r => r.id.toString() === rowId);
     if (rowIndex === -1) {
-      return new NextResponse("Project Row not found", { status: 404 });
+      return errorHtml("Not Found", "We couldn't find this specific project row.");
     }
 
     // 4. Update the status (checking if it's a Report column or Due Date column)
@@ -47,7 +71,7 @@ export async function GET(req) {
     const html = `
       <html>
         <body style="font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f8fafc; margin: 0;">
-          <div style="background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; max-width: 400px;">
+          <div style="background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); text-align: center; max-width: 400px; border-top: 4px solid ${status === 'Cleared' ? '#10b981' : '#f59e0b'};">
             <div style="font-size: 50px; margin-bottom: 10px;">
               ${status === 'Cleared' ? '✅' : '⏳'}
             </div>
@@ -65,6 +89,6 @@ export async function GET(req) {
 
   } catch (error) {
     console.error("Error updating status via email:", error);
-    return new NextResponse("Internal Server Error", { status: 500 });
+    return errorHtml("System Error", "An unexpected error occurred while saving to the database.");
   }
 }

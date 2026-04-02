@@ -43,6 +43,9 @@ export async function GET(req) {
       },
     });
 
+    const emailTasks = []; // 🚀 Holds all emails to fire at the exact same time
+    const modifiedSheets = new Set(); // 🚀 Tracks which databases to save
+
     const extractEmailsWithRoles = (sheet, row) => {
       const recipients = [];
       const seenEmails = new Set();
@@ -84,7 +87,6 @@ export async function GET(req) {
 
     for (const sheet of sheets) {
       const safeRows = Array.isArray(sheet.rows) ? sheet.rows : [];
-      let sheetChanged = false;
 
       for (const row of safeRows) {
         const emailsWithRoles = extractEmailsWithRoles(sheet, row);
@@ -95,8 +97,7 @@ export async function GET(req) {
           const dueDate = row.dueDates?.[col.id];
           if (!dueDate || status === "Cleared") continue; 
 
-          const didChange = await processReminders(col, dueDate, row, sheet, emailsWithRoles, appBaseUrl, false);
-          sheetChanged = sheetChanged || didChange;
+          processReminders(col, dueDate, row, sheet, emailsWithRoles, appBaseUrl, false);
         }
 
         for (const col of sheet.reportCols || []) {
@@ -104,25 +105,19 @@ export async function GET(req) {
           const reportDate = row.reportDates?.[col.id];
           if (!reportDate || status === "Cleared") continue;
 
-          const didChange = await processReminders(col, reportDate, row, sheet, emailsWithRoles, appBaseUrl, true);
-          sheetChanged = sheetChanged || didChange;
+          processReminders(col, reportDate, row, sheet, emailsWithRoles, appBaseUrl, true);
         }
-      }
-
-      if (sheetChanged) {
-        sheet.markModified("rows");
-        await sheet.save();
       }
     }
 
-    async function processReminders(col, dateValue, row, sheet, emails, appBaseUrl, isReport) {
+    function processReminders(col, dateValue, row, sheet, emails, appBaseUrl, isReport) {
       const diffDays = getDateDiffDays(dateValue);
-      let reminderSaved = false;
 
       for (const { address, role } of emails) {
         const reminderKey = [isReport ? "report" : "due", col.id, dateValue, diffDays, role, address.toLowerCase()].join(":");
 
         if (!Array.isArray(row.sentReminderKeys)) row.sentReminderKeys = [];
+        if (row.sentReminderKeys.includes(reminderKey)) continue; // Anti-spam check
 
         let customMessage = "";
         if (isReport) {
@@ -133,49 +128,56 @@ export async function GET(req) {
           customMessage = `${row.project} - ${col.title} needs to be received on ${dateValue}.`;
         }
 
-        try {
-          let actionButtons = "";
-          if (role === "payer" && sheet._id && row.id && col.id) {
-            const clearedLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Cleared&isReport=${isReport}`;
-            const pendingLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Pending&isReport=${isReport}`;
+        let actionButtons = "";
+        if (role === "payer" && sheet._id && row.id && col.id) {
+          const clearedLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Cleared&isReport=${isReport}`;
+          const pendingLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Pending&isReport=${isReport}`;
 
-            actionButtons = `
-              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px dashed #cbd5e1;">
-                <p style="font-size: 14px; color: #334155; margin-bottom: 15px;"><strong>Update the status directly:</strong></p>
-                <a href="${clearedLink}" style="background-color: #10b981; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">Mark as Cleared</a>
-                <a href="${pendingLink}" style="background-color: #f59e0b; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Mark as Pending</a>
-              </div>
-            `;
-          }
+          actionButtons = `
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px dashed #cbd5e1;">
+              <p style="font-size: 14px; color: #334155; margin-bottom: 15px;"><strong>Update the status directly:</strong></p>
+              <a href="${clearedLink}" style="background-color: #10b981; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">Mark as Cleared</a>
+              <a href="${pendingLink}" style="background-color: #f59e0b; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Mark as Pending</a>
+            </div>
+          `;
+        }
 
-          const mailOptions = {
-            from: `"MoF Project Tracker" <${process.env.GMAIL_USER}>`,
-            to: address,
-            subject: `${row.project} - Tracker Update`,
-            text: customMessage,
-            html: `
-              <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 600px;">
-                <h2 style="color: #1e293b; margin-top: 0;">Project Update</h2>
-                <p style="font-size: 16px; color: #334155;"><strong>Project:</strong> ${row.project}</p>
-                <p style="font-size: 16px; color: #334155;"><strong>Message:</strong> ${customMessage}</p>
-                ${actionButtons}
-                <hr style="margin: 20px 0; border: none; border-top: 1px solid #cbd5e1;" />
-                <p style="font-size: 12px; color: #94a3b8;">This is an automated notification from the MoF Project Tracker.</p>
-              </div>
-            `,
-          };
+        const mailOptions = {
+          from: `"MoF Project Tracker" <${process.env.GMAIL_USER}>`,
+          to: address,
+          subject: `${row.project} - Tracker Update`,
+          text: customMessage,
+          html: `
+            <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 600px;">
+              <h2 style="color: #1e293b; margin-top: 0;">Project Update</h2>
+              <p style="font-size: 16px; color: #334155;"><strong>Project:</strong> ${row.project}</p>
+              <p style="font-size: 16px; color: #334155;"><strong>Message:</strong> ${customMessage}</p>
+              ${actionButtons}
+              <hr style="margin: 20px 0; border: none; border-top: 1px solid #cbd5e1;" />
+              <p style="font-size: 12px; color: #94a3b8;">This is an automated notification from the MoF Project Tracker.</p>
+            </div>
+          `,
+        };
 
-          // Removed the 1500ms delay completely so this fires instantly
-          await transporter.sendMail(mailOptions);
+        // 🚀 Push the task to the array instead of waiting for it
+        const task = transporter.sendMail(mailOptions).then(() => {
           emailsSent++;
           row.sentReminderKeys.push(reminderKey);
-          reminderSaved = true;
+          modifiedSheets.add(sheet);
           console.log(`Sent successfully to: ${address}`);
-        } catch (err) {
-          console.error(`Email send failed for ${address}:`, err);
-        }
+        }).catch(err => console.error(`Email send failed for ${address}:`, err));
+
+        emailTasks.push(task);
       }
-      return reminderSaved;
+    }
+
+    // 🚀 Execute ALL emails concurrently in one massive batch!
+    await Promise.allSettled(emailTasks);
+
+    // Save only the databases that had successful emails sent
+    for (const sheet of modifiedSheets) {
+      sheet.markModified("rows");
+      await sheet.save();
     }
 
     return NextResponse.json({ success: true, message: `Background scan complete. Sent ${emailsSent} emails.` });
