@@ -540,9 +540,9 @@ export default function Home() {
                           className={`px-4 py-2 cursor-pointer hover:bg-slate-50 transition-colors ${activeSheetId === s.id ? 'text-blue-600 bg-blue-50/50' : 'text-slate-700'}`}
                         >
                           <p className="text-sm font-bold">{s.name}</p>
-                          {s.userEmail && (
+                          {isAdminUser && s.userEmail && (
                             <p className="mt-1 text-[10px] text-slate-400">Owner: {s.userEmail}</p>
-                          )}
+                            )}
                         </div>
                       ))}
                       <div className="border-t border-slate-100 mt-1 pt-1"></div>
