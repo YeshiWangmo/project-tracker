@@ -640,6 +640,8 @@ export default function Home() {
                             {!row.hasStarted ? (
                               <button onClick={() => {
                                   if(!row.startDate) return alert("Please select a Start Date first.");
+                                  
+                                  // 1. Send "project started" notification
                                   const msg = `This is a message from the MoF, Bhutan. ${row.project} has started, now you will be receiving the notification of this from now on.`;
                                   getRowRecipients(row, emailCols).forEach(({ address, role }) =>
                                     triggerEmail(address, row.project, msg, {
@@ -649,6 +651,61 @@ export default function Home() {
                                       baseUrl: appBaseUrl
                                     })
                                   );
+
+                                  // 2. Send due date reminder emails for each due column that has a date set
+                                  dueTypes.forEach(col => {
+                                    const dueDate = row.dueDates?.[col.id];
+                                    if (!dueDate) return;
+                                    const today = new Date();
+                                    today.setHours(0, 0, 0, 0);
+                                    const due = new Date(dueDate);
+                                    due.setHours(0, 0, 0, 0);
+                                    const daysLeft = Math.round((due - today) / (1000 * 60 * 60 * 24));
+                                    const shouldSend = col.reminderDays?.some(d => d === daysLeft) || daysLeft <= 0;
+                                    if (shouldSend) {
+                                      const dueMsg = daysLeft <= 0
+                                        ? `REMINDER: ${col.title} for ${row.project} is DUE TODAY or OVERDUE (${dueDate}).`
+                                        : `REMINDER: ${col.title} for ${row.project} is due in ${daysLeft} day(s) on ${dueDate}.`;
+                                      getRowRecipients(row, emailCols).forEach(({ address, role }) =>
+                                        triggerEmail(address, row.project, dueMsg, {
+                                          role,
+                                          sheetId: activeSheet?._id,
+                                          rowId: row.id,
+                                          colId: col.id,
+                                          isReport: false,
+                                          baseUrl: appBaseUrl
+                                        })
+                                      );
+                                    }
+                                  });
+
+                                  // 3. Send report due date reminder emails for each report column that has a date set
+                                  reportCols.forEach(col => {
+                                    const repDate = row.reportDates?.[col.id];
+                                    if (!repDate) return;
+                                    const today = new Date();
+                                    today.setHours(0, 0, 0, 0);
+                                    const due = new Date(repDate);
+                                    due.setHours(0, 0, 0, 0);
+                                    const daysLeft = Math.round((due - today) / (1000 * 60 * 60 * 24));
+                                    const shouldSend = col.reminderDays?.some(d => d === daysLeft) || daysLeft <= 0;
+                                    if (shouldSend) {
+                                      const repMsg = daysLeft <= 0
+                                        ? `REMINDER: Report "${col.title}" for ${row.project} is DUE TODAY or OVERDUE (${repDate}).`
+                                        : `REMINDER: Report "${col.title}" for ${row.project} is due in ${daysLeft} day(s) on ${repDate}.`;
+                                      getRowRecipients(row, emailCols).forEach(({ address, role }) =>
+                                        triggerEmail(address, row.project, repMsg, {
+                                          role,
+                                          sheetId: activeSheet?._id,
+                                          rowId: row.id,
+                                          colId: col.id,
+                                          isReport: true,
+                                          baseUrl: appBaseUrl
+                                        })
+                                      );
+                                    }
+                                  });
+
                                   setSheets(sheets.map(s => s.id === activeSheetId ? {...s, rows: s.rows.map(r => r.id === row.id ? {...r, hasStarted: true} : r)} : s));
                                 }} className="w-full py-2 rounded-lg text-[8px] font-black tracking-widest border transition-all bg-blue-500 text-white border-blue-600 hover:bg-blue-600 shadow-sm">START PROJECT</button>
                             ) : (
