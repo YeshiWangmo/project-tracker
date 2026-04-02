@@ -15,7 +15,7 @@ export async function GET() {
     }
 
     const userEmail = user.emailAddresses[0]?.emailAddress || "";
-    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
     const isAdmin = userEmail === adminEmail;
 
     const sheets = isAdmin
@@ -37,7 +37,7 @@ export async function POST(req) {
     }
 
     const userEmail = user.emailAddresses[0]?.emailAddress || "";
-    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
     const isAdmin = userEmail === adminEmail;
     const incomingData = await req.json();
     
