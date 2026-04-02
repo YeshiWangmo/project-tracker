@@ -175,9 +175,13 @@ export async function GET(req) {
     await Promise.allSettled(emailTasks);
 
     // Save only the databases that had successful emails sent
+    // Save only the databases that had successful emails sent
     for (const sheet of modifiedSheets) {
-      sheet.markModified("rows");
-      await sheet.save();
+      // Use updateOne to update the rows without triggering validation on old test sheets
+      await Tracker.updateOne(
+        { _id: sheet._id },
+        { $set: { rows: sheet.rows } }
+      );
     }
 
     return NextResponse.json({ success: true, message: `Background scan complete. Sent ${emailsSent} emails.` });
