@@ -72,6 +72,62 @@ export async function POST(req) {
       updateData.userId = existingSheet?.userId || user.id;
       updateData.userEmail = existingSheet?.userEmail || userEmail;
 
+      // ==========================================
+      // HISTORY LOG LOGIC: Detect Changes
+      // ==========================================
+      let newLogEntries = [];
+
+      if (existingSheet && existingSheet.rows && updateData.rows) {
+        // Create a quick lookup map of the old rows
+        const oldRowsMap = {};
+        existingSheet.rows.forEach(r => { oldRowsMap[r.id] = r; });
+
+        // Compare new rows to old rows
+        updateData.rows.forEach(newRow => {
+          const oldRow = oldRowsMap[newRow.id];
+          const projectName = newRow.project || "Unnamed Project";
+
+          if (oldRow) {
+            // 1. Check for Due Date changes
+            if (newRow.dueDates) {
+              Object.keys(newRow.dueDates).forEach(colId => {
+                const oldDate = oldRow.dueDates[colId] || "None";
+                const newDate = newRow.dueDates[colId] || "None";
+                if (oldDate !== newDate) {
+                  newLogEntries.push(`Date changed for '${projectName}': from ${oldDate} to ${newDate}`);
+                }
+              });
+            }
+
+            // 2. Check for Email changes
+            if (newRow.emails) {
+              Object.keys(newRow.emails).forEach(colId => {
+                const oldEmail = oldRow.emails[colId] || "None";
+                const newEmail = newRow.emails[colId] || "None";
+                if (oldEmail !== newEmail) {
+                  newLogEntries.push(`Email changed for '${projectName}': from ${oldEmail} to ${newEmail}`);
+                }
+              });
+            }
+          }
+        });
+      }
+
+      // If we found changes, append them to the historyLogs array in the database
+      if (newLogEntries.length > 0) {
+        const logObject = {
+          timestamp: new Date().toISOString(),
+          editedBy: userEmail,
+          changes: newLogEntries
+        };
+        // Preserve existing logs and add the new one
+        updateData.historyLogs = [...(existingSheet.historyLogs || []), logObject];
+      } else {
+        // Keep the old logs if nothing changed
+        updateData.historyLogs = existingSheet?.historyLogs || [];
+      }
+      // ==========================================
+
       // Find the specific project by its ID and update it safely
       const savedSheet = await Tracker.findOneAndUpdate(
         { id: uniqueId }, 

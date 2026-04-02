@@ -140,8 +140,11 @@ export async function GET(req) {
 
     async function processReminders(col, dateValue, row, sheet, emails, senderBaseUrl, appBaseUrl, isReport) {
       const diffDays = getDateDiffDays(dateValue);
-      const rawSchedule = col.reminderDays || [30, 17, 7, 3, 0];
-      const schedule = [...new Set([...rawSchedule.map(Number), 0])];
+      
+      // FIX: Always include 1 (tomorrow) and 0 (today) in the logic
+      const rawSchedule = col.reminderDays || [30, 17, 7, 3, 1, 0];
+      const schedule = [...new Set([...rawSchedule.map(Number), 1, 0])];
+      
       let reminderSaved = false;
 
       console.log(`\n=> Checking: ${row.project} | ${col.title} (${isReport ? "Report" : "Due Date"})`);
