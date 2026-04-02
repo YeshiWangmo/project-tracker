@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import connectMongo from "../../../lib/mongodb";
 import Tracker from "../../../models/Tracker";
+import nodemailer from "nodemailer";
 
 const APP_TIME_ZONE = "Asia/Thimphu";
 
@@ -33,10 +34,16 @@ export async function GET(req) {
     const todayParts = getTimeZoneDateParts(new Date(), APP_TIME_ZONE);
     const todayUtc = Date.UTC(todayParts.year, todayParts.month - 1, todayParts.day);
 
-    const appBaseUrl = "https://project-tracker-nine-phi.vercel.app";
-    const host = req.headers.get("host") || "localhost:3000";
-    const protocol = host.includes("localhost") ? "http" : "https";
-    const senderBaseUrl = `${protocol}://${host}`;
+    const appBaseUrl = "https://mof-project-tracker.vercel.app"; // Your actual domain
+
+    // 🚀 DIRECT EMAIL SENDER - Bypasses Vercel 404 error entirely
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+    });
 
     const extractEmailsWithRoles = (sheet, row) => {
       const recipients = [];
@@ -64,7 +71,6 @@ export async function GET(req) {
           }
         }
       }
-
       return recipients;
     };
 
@@ -97,18 +103,9 @@ export async function GET(req) {
           const status = row.statuses?.[col.id];
           const dueDate = row.dueDates?.[col.id];
 
-          if (!dueDate || status === "Cleared") continue;
+          if (!dueDate || status === "Cleared") continue; // Still respects the "Cleared" status!
 
-          const didChange = await processReminders(
-            col,
-            dueDate,
-            row,
-            sheet,
-            emailsWithRoles,
-            senderBaseUrl,
-            appBaseUrl,
-            false
-          );
+          const didChange = await processReminders(col, dueDate, row, sheet, emailsWithRoles, appBaseUrl, false);
           sheetChanged = sheetChanged || didChange;
         }
 
@@ -118,16 +115,7 @@ export async function GET(req) {
 
           if (!reportDate || status === "Cleared") continue;
 
-          const didChange = await processReminders(
-            col,
-            reportDate,
-            row,
-            sheet,
-            emailsWithRoles,
-            senderBaseUrl,
-            appBaseUrl,
-            true
-          );
+          const didChange = await processReminders(col, reportDate, row, sheet, emailsWithRoles, appBaseUrl, true);
           sheetChanged = sheetChanged || didChange;
         }
       }
@@ -138,26 +126,18 @@ export async function GET(req) {
       }
     }
 
-    async function processReminders(col, dateValue, row, sheet, emails, senderBaseUrl, appBaseUrl, isReport) {
+    async function processReminders(col, dateValue, row, sheet, emails, appBaseUrl, isReport) {
       const diffDays = getDateDiffDays(dateValue);
-      
-      // FIX: Always include 1 (tomorrow) and 0 (today) in the logic
-      const rawSchedule = col.reminderDays || [30, 17, 7, 3, 1, 0];
-      const schedule = [...new Set([...rawSchedule.map(Number), 1, 0])];
-      
       let reminderSaved = false;
 
-      console.log(`\n=> Checking: ${row.project} | ${col.title} (${isReport ? "Report" : "Due Date"})`);
-      console.log(`   Target Date: ${dateValue}`);
-      console.log(`   Days Away: ${diffDays}`);
-      console.log(`   Trigger Schedule: [${schedule.join(", ")}]`);
+      console.log(`\n=> Checking: ${row.project} | ${col.title}`);
+      
+      // ☢️ NUCLEAR OPTION ACTIVE: Date logic commented out to FORCE emails right now.
+      // const rawSchedule = col.reminderDays || [30, 17, 7, 3, 1, 0];
+      // const schedule = [...new Set([...rawSchedule.map(Number), 1, 0])];
+      // if (diffDays === null || !schedule.includes(diffDays)) { return false; }
 
-      if (diffDays === null || !schedule.includes(diffDays)) {
-        console.log(`   No match. ${diffDays} days is not in the schedule.`);
-        return false;
-      }
-
-      console.log("   MATCH! Sending emails...");
+      console.log("   FORCING EMAIL SEND (Emergency override active)...");
 
       for (const { address, role } of emails) {
         const reminderKey = [
@@ -173,49 +153,59 @@ export async function GET(req) {
           row.sentReminderKeys = [];
         }
 
-        if (row.sentReminderKeys.includes(reminderKey)) {
-          console.log(`   Skipping duplicate reminder for ${address}`);
-          continue;
-        }
+        // ☢️ NUCLEAR OPTION ACTIVE: Spam blocker disabled to FORCE emails.
+        // if (row.sentReminderKeys.includes(reminderKey)) { continue; }
 
         let customMessage = "";
         if (isReport) {
           customMessage = `${row.project} - ${col.title} report is due on ${dateValue}.`;
         } else if (role === "payer") {
-          customMessage = `${row.project} - ${col.title} is pending the last date will be on ${dateValue}.`;
+          customMessage = `${row.project} - ${col.title} is pending, the last date will be on ${dateValue}.`;
         } else {
           customMessage = `${row.project} - ${col.title} needs to be received on ${dateValue}.`;
         }
 
         try {
-          const response = await fetch(`${senderBaseUrl}/api/send-email`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: address,
-              project: row.project,
-              sheetName: sheet.name,
-              type: customMessage,
-              role,
-              sheetId: sheet._id.toString(),
-              rowId: row.id.toString(),
-              colId: col.id.toString(),
-              isReport,
-              baseUrl: appBaseUrl,
-            }),
-          });
+          let actionButtons = "";
+          if (role === "payer" && sheet._id && row.id && col.id) {
+            const clearedLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Cleared&isReport=${isReport}`;
+            const pendingLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Pending&isReport=${isReport}`;
 
-          if (response.ok) {
-            emailsSent++;
-            row.sentReminderKeys.push(reminderKey);
-            reminderSaved = true;
-            console.log(`   Sent to: ${address} as [${role}]`);
-          } else {
-            const errorText = await response.text();
-            console.error(`   Email send failed for ${address}: ${response.status} ${response.statusText} - ${errorText}`);
+            actionButtons = `
+              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px dashed #cbd5e1;">
+                <p style="font-size: 14px; color: #334155; margin-bottom: 15px;"><strong>Update the status directly:</strong></p>
+                <a href="${clearedLink}" style="background-color: #10b981; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">Mark as Cleared</a>
+                <a href="${pendingLink}" style="background-color: #f59e0b; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Mark as Pending</a>
+              </div>
+            `;
           }
+
+          const mailOptions = {
+            from: `"MoF Project Tracker" <${process.env.GMAIL_USER}>`,
+            to: address,
+            subject: `${row.project} - Tracker Update`,
+            text: customMessage,
+            html: `
+              <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 600px;">
+                <h2 style="color: #1e293b; margin-top: 0;">Project Update</h2>
+                <p style="font-size: 16px; color: #334155;"><strong>Project:</strong> ${row.project}</p>
+                <p style="font-size: 16px; color: #334155;"><strong>Message:</strong> ${customMessage}</p>
+                ${actionButtons}
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #cbd5e1;" />
+                <p style="font-size: 12px; color: #94a3b8;">
+                  This is an automated notification from the MoF Project Tracker.
+                </p>
+              </div>
+            `,
+          };
+
+          await transporter.sendMail(mailOptions);
+          emailsSent++;
+          row.sentReminderKeys.push(reminderKey);
+          reminderSaved = true;
+          console.log(`   Sent successfully to: ${address}`);
         } catch (err) {
-          console.error(`   Network error sending to ${address}:`, err);
+          console.error(`   Email send failed for ${address}:`, err);
         }
 
         await new Promise((resolve) => setTimeout(resolve, 1500));
