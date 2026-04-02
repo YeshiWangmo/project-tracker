@@ -646,7 +646,7 @@ export default function Home() {
                                   getRowRecipients(row, emailCols).forEach(({ address, role }) =>
                                     triggerEmail(address, row.project, msg, {
                                       role,
-                                      sheetId: activeSheet?._id,
+                                      sheetId: activeSheet?.id,
                                       rowId: row.id,
                                       baseUrl: appBaseUrl
                                     })
@@ -669,7 +669,7 @@ export default function Home() {
                                       getRowRecipients(row, emailCols).forEach(({ address, role }) =>
                                         triggerEmail(address, row.project, dueMsg, {
                                           role,
-                                          sheetId: activeSheet?._id,
+                                          sheetId: activeSheet?.id,
                                           rowId: row.id,
                                           colId: col.id,
                                           isReport: false,
@@ -696,7 +696,7 @@ export default function Home() {
                                       getRowRecipients(row, emailCols).forEach(({ address, role }) =>
                                         triggerEmail(address, row.project, repMsg, {
                                           role,
-                                          sheetId: activeSheet?._id,
+                                          sheetId: activeSheet?.id,
                                           rowId: row.id,
                                           colId: col.id,
                                           isReport: true,
@@ -798,7 +798,7 @@ export default function Home() {
                                     if(next === "Cleared") getRowRecipients(row, emailCols).forEach(({ address, role }) =>
                                       triggerEmail(address, row.project, `${col.title} CLEARED`, {
                                         role,
-                                        sheetId: activeSheet?._id,
+                                        sheetId: activeSheet?.id,
                                         rowId: row.id,
                                         colId: col.id,
                                         isReport: false,
@@ -828,7 +828,7 @@ export default function Home() {
                                       getRowRecipients(row, emailCols).forEach(({ address, role }) =>
                                         triggerEmail(address, row.project, stopMsg, {
                                           role,
-                                          sheetId: activeSheet?._id,
+                                          sheetId: activeSheet?.id,
                                           rowId: row.id,
                                           colId: col.id,
                                           isReport: true,
