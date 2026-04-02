@@ -1,0 +1,15 @@
+name: Hourly Reminder Check
+
+on:
+  schedule:
+    - cron: '0 * * * *' # This runs every hour on the dot
+  workflow_dispatch: # This adds a "Play" button so we can test it manually!
+
+jobs:
+  check-deadlines:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping API Route
+        run: |
+          curl -i -X GET "https://mof-project-tracker.vercel.app/api/cron" \
+          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
