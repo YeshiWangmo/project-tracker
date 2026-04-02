@@ -1,6 +1,7 @@
 ﻿"use client";
 import { useState, useEffect } from "react";
 import { UserButton, useUser } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 
 export default function Home() {
   const appBaseUrl = "https://project-tracker-nine-phi.vercel.app";
@@ -502,12 +503,12 @@ export default function Home() {
                   <div className="mr-2">
                     <div className="flex items-center gap-3">
                       <h2 className="text-2xl font-black text-slate-800">{activeSheet.name}</h2>
-                      {activeSheet.userEmail && (
+                      {isAdminUser && activeSheet.userEmail && (
                         <span className="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-600">
                           Owner: {activeSheet.userEmail}
-                        </span>
-                      )}
-                    </div>
+                          </span>
+                        )}
+                        </div>
                   </div>
                 )}
                 {/* Custom Sheet Dropdown */}
