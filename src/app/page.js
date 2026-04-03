@@ -418,7 +418,7 @@ export default function Home() {
 
       <aside className="w-64 bg-[#0f172a] text-white p-8 flex flex-col gap-3">
         <div className="text-2xl font-black mb-8 text-blue-500 tracking-tighter">
-          {isAdminUser ? "Admin Hub" : "Project Tracker"}
+          {isAdmin ? "Admin Hub" : "Project Tracker"}
         </div>
         
         {/* Dashboard */}
@@ -503,7 +503,7 @@ export default function Home() {
                   <div className="mr-2">
                     <div className="flex items-center gap-3">
                       <h2 className="text-2xl font-black text-slate-800">{activeSheet.name}</h2>
-                      {isAdminUser && activeSheet.userEmail && (
+                      {isAdmin && activeSheet.userEmail && (
                         <span className="rounded-full bg-blue-500/10 px-3 py-1 text-xs font-semibold text-blue-600">
                           Owner: {activeSheet.userEmail}
                           </span>
@@ -540,7 +540,7 @@ export default function Home() {
                           className={`px-4 py-2 cursor-pointer hover:bg-slate-50 transition-colors ${activeSheetId === s.id ? 'text-blue-600 bg-blue-50/50' : 'text-slate-700'}`}
                         >
                           <p className="text-sm font-bold">{s.name}</p>
-                          {isAdminUser && s.userEmail && (
+                          {isAdmin && s.userEmail && (
                             <p className="mt-1 text-[10px] text-slate-400">Owner: {s.userEmail}</p>
                             )}
                         </div>
@@ -871,7 +871,7 @@ export default function Home() {
                  </thead>
                  <tbody>
                    {sheets.map(sheet => 
-                     sheet.rows?.filter(r => r.isDeleted).map(row => (
+                     (sheet.rows?.filter(r => r.isDeleted) || []).map(row => (
                        <tr key={`${sheet.id}-${row.id}`} className="border-b border-slate-50 hover:bg-slate-50 transition">
                          <td className="p-5 font-bold text-slate-500">{sheet.name}</td>
                          <td className="p-5 font-bold text-slate-800">{row.project || "Unnamed Project"}</td>
@@ -918,43 +918,6 @@ export default function Home() {
                  ))}
                </tbody>
              </table>
-          </div>
-        )}
-
-        {/* VIEW: USER MANAGEMENT */}
-        {view === "users" && (
-          <div className="bg-white p-10 rounded-[2.5rem] shadow-xl border border-slate-100 max-w-4xl mx-auto">
-             <div className="flex justify-between items-center mb-8">
-               <h2 className="text-2xl font-black">User Management</h2>
-               <button onClick={() => setModal({show:true, type:'ADD_USER', title:'Add New User', value: '', extra: '', role: 'user'})} className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold text-sm shadow-md hover:bg-blue-700 transition">+ Add User</button>
-             </div>
-             <div className="border border-slate-100 rounded-2xl overflow-hidden">
-               <table className="w-full text-left">
-                 <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                   <tr>
-                     <th className="p-5">Username</th>
-                     <th className="p-5">Password</th>
-                     <th className="p-5">Role</th>
-                     <th className="p-5 text-center">Action</th>
-                   </tr>
-                 </thead>
-                 <tbody>
-                   {users.map(u => (
-                     <tr key={u.id || u.username} className="border-b border-slate-50 text-sm">
-                       <td className="p-5 font-bold text-slate-800">{u.username}</td>
-                       <td className="p-5 font-mono text-slate-400">{u.password}</td>
-                       <td className="p-5">
-                         <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${u.role === 'admin' ? 'bg-purple-100 text-purple-600' : 'bg-slate-100 text-slate-500'}`}>{u.role}</span>
-                       </td>
-                       <td className="p-5 text-center">
-                         <button onClick={() => setModal({show:true, type:'EDIT_USER', title:'Edit User', value: u.username, extra: u.password, role: u.role, editId: u.id})} className="text-blue-500 font-bold text-xs hover:underline mr-4">Edit</button>
-                         <button onClick={() => setUsers(users.filter(user => user.id !== u.id))} className="text-red-500 font-bold text-xs hover:underline">Delete</button>
-                       </td>
-                     </tr>
-                   ))}
-                 </tbody>
-               </table>
-             </div> 
           </div>
         )}
       </main>
