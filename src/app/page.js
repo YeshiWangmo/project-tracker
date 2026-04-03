@@ -134,7 +134,8 @@ export default function Home() {
     user?.primaryEmailAddress?.emailAddress ||
     "Clerk User";
   const userEmail = user?.primaryEmailAddress?.emailAddress || "";
-  const isAdminUser = userEmail === process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+  const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAIL ? process.env.NEXT_PUBLIC_ADMIN_EMAIL.split(",").map(e => e.trim()) : [];
+  const isAdmin = adminEmails.includes(userEmail);
 
   const triggerEmail = async (emailAddr, project, type, options = {}) => {
     if (!emailAddr || !emailAddr.includes("@")) return;
