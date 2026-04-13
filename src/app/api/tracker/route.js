@@ -77,3 +77,43 @@ export async function POST(req) {
     return NextResponse.json({ error: "Failed to save tracker data", details: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(req) {
+  try {
+    await connectMongo();
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const sheetIdParam = searchParams.get("sheetId");
+    if (!sheetIdParam) {
+      return NextResponse.json({ error: "Missing sheetId" }, { status: 400 });
+    }
+
+    const sheetId = Number(sheetIdParam);
+    if (Number.isNaN(sheetId)) {
+      return NextResponse.json({ error: "Invalid sheetId" }, { status: 400 });
+    }
+
+    const userEmail = user.emailAddresses[0]?.emailAddress || "";
+    const adminEmails = process.env.NEXT_PUBLIC_ADMIN_EMAIL ? process.env.NEXT_PUBLIC_ADMIN_EMAIL.split(",").map(e => e.trim()) : [];
+    const isAdmin = adminEmails.includes(userEmail);
+
+    const sheet = await Tracker.findOne({ id: sheetId });
+    if (!sheet) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (!isAdmin && sheet.userId !== user.id) {
+      return NextResponse.json({ error: "Forbidden: You cannot delete someone else's sheet." }, { status: 403 });
+    }
+
+    await Tracker.deleteOne({ id: sheetId });
+    return NextResponse.json({ success: true, message: "Sheet permanently deleted." });
+  } catch (error) {
+    console.error("Delete Error:", error);
+    return NextResponse.json({ error: "Failed to delete sheet" }, { status: 500 });
+  }
+}

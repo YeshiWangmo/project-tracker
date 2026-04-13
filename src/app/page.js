@@ -201,8 +201,16 @@ export default function Home() {
   const confirmModal = () => {
     if (modal.type === "RENAME_SHEET") setSheets(sheets.map(s => s.id === activeSheetId ? { ...s, name: modal.value } : s));
     if (modal.type === "DELETE_SHEET") {
+      fetch(`/api/tracker?sheetId=${activeSheetId}`, { method: "DELETE" }).catch(err => console.error(err));
       const remaining = sheets.filter(s => s.id !== activeSheetId);
-      if (remaining.length > 0) { setSheets(remaining); setActiveSheetId(remaining[0].id); }
+      if (remaining.length > 0) {
+        setSheets(remaining);
+        setActiveSheetId(remaining[0].id);
+      } else {
+        const fallbackSheet = createDefaultSheet();
+        setSheets([fallbackSheet]);
+        setActiveSheetId(fallbackSheet.id);
+      }
     }
     if (modal.type === "ADD_SHEET") {
       const newSheet = createDefaultSheet();
