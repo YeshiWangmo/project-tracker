@@ -42,47 +42,72 @@ export default function Home() {
 
   // --- INITIAL LOAD WITH SAFEGUARDS & ID SYNC FIX ---
   useEffect(() => {
-    const fetchData = async () => {
+    let isMounted = true;
+
+    const fetchTrackerData = async ({ includeHistory = false, useFallback = false } = {}) => {
       try {
-        // Fetch Sheets
         const resSheets = await fetch("/api/tracker");
         const dbSheets = await resSheets.json();
-        
-        let sheetsToLoad = [];
-        if (Array.isArray(dbSheets) && dbSheets.length > 0) {
-          sheetsToLoad = dbSheets;
-        } else {
-          sheetsToLoad = [createDefaultSheet()];
-        }
+
+        const sheetsToLoad = Array.isArray(dbSheets) && dbSheets.length > 0
+          ? dbSheets
+          : [createDefaultSheet()];
+
+        if (!isMounted) return;
+
         setSheets(sheetsToLoad);
+        setActiveSheetId(prevActiveId => {
+          if (prevActiveId && sheetsToLoad.some(s => s.id === prevActiveId)) {
+            return prevActiveId;
+          }
 
-        // 🚨 NEW FIX: Force the Active ID to match the actual database!
-        const savedActiveId = localStorage.getItem("tracker-active-id");
-        const parsedId = savedActiveId ? JSON.parse(savedActiveId) : null;
-        
-        if (parsedId && sheetsToLoad.some(s => s.id === parsedId)) {
-          setActiveSheetId(parsedId);
-        } else {
-          // If the ID is broken, force it to lock onto the very first sheet
-          setActiveSheetId(sheetsToLoad[0].id);
+          const savedActiveId = localStorage.getItem("tracker-active-id");
+          const parsedId = savedActiveId ? JSON.parse(savedActiveId) : null;
+          if (parsedId && sheetsToLoad.some(s => s.id === parsedId)) {
+            return parsedId;
+          }
+
+          return sheetsToLoad[0]?.id ?? null;
+        });
+
+        if (includeHistory) {
+          const resHistory = await fetch("/api/history");
+          const dbHistory = await resHistory.json();
+          if (isMounted && Array.isArray(dbHistory) && dbHistory.length > 0) {
+            setHistory(dbHistory);
+          }
         }
-
-        // 🚨 FIX: TEMPORARILY DISABLED HISTORY FETCH TO PREVENT CRASH
-        const resHistory = await fetch("/api/history");
-        const dbHistory = await resHistory.json();
-        if (Array.isArray(dbHistory) && dbHistory.length > 0) setHistory(dbHistory);
-
       } catch (error) {
         console.error("Failed to fetch from DB:", error);
-        const fallbackSheet = createDefaultSheet();
-        setSheets([fallbackSheet]); 
-        setActiveSheetId(fallbackSheet.id);
+
+        if (useFallback && isMounted) {
+          const fallbackSheet = createDefaultSheet();
+          setSheets([fallbackSheet]);
+          setActiveSheetId(fallbackSheet.id);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoaded(true);
+        }
       }
-      
-      setIsLoaded(true);
     };
-    
-    fetchData();
+
+    fetchTrackerData({ includeHistory: true, useFallback: true });
+
+    const intervalId = setInterval(() => {
+      fetchTrackerData();
+    }, 30000);
+
+    const handleFocus = () => {
+      fetchTrackerData();
+    };
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, []);
 
   // --- SAVE ALL DATA TO CLOUD ---
