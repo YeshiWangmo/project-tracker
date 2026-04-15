@@ -42,8 +42,15 @@ export async function GET(req) {
 
     await connectMongo();
 
-    // 2. Find the tracker sheet
-    const sheet = await Tracker.findById(sheetId);
+    // 2. Find the tracker sheet by Mongo _id or by the app's numeric/custom id
+    const numericSheetId = Number(sheetId);
+    const sheet = await Tracker.findOne({
+      $or: [
+        { _id: sheetId },
+        ...(Number.isNaN(numericSheetId) ? [] : [{ id: numericSheetId }]),
+        { id: sheetId },
+      ],
+    });
     if (!sheet) {
       return errorHtml("Database Error", "Project Tracker database not found.");
     }
