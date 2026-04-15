@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import connectMongo from "../../../lib/mongodb"; 
 import Tracker from "../../../models/Tracker"; 
+import mongoose from "mongoose";
 
 // Helper function to return beautiful error pages instead of plain text crashes
 function errorHtml(title, message) {
@@ -44,12 +45,20 @@ export async function GET(req) {
 
     // 2. Find the tracker sheet by Mongo _id or by the app's numeric/custom id
     const numericSheetId = Number(sheetId);
+    const queryOptions = [];
+
+    if (mongoose.Types.ObjectId.isValid(sheetId)) {
+      queryOptions.push({ _id: sheetId });
+    }
+
+    if (!Number.isNaN(numericSheetId)) {
+      queryOptions.push({ id: numericSheetId });
+    }
+
+    queryOptions.push({ id: sheetId });
+
     const sheet = await Tracker.findOne({
-      $or: [
-        { _id: sheetId },
-        ...(Number.isNaN(numericSheetId) ? [] : [{ id: numericSheetId }]),
-        { id: sheetId },
-      ],
+      $or: queryOptions,
     });
     if (!sheet) {
       return errorHtml("Database Error", "Project Tracker database not found.");
