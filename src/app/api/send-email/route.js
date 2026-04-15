@@ -4,6 +4,11 @@ import nodemailer from "nodemailer";
 export async function POST(req) {
   try {
     const { to, project, sheetName, type, role, baseUrl, sheetId, rowId, colId, isReport } = await req.json();
+    const messageText = typeof type === "string" ? type : "";
+    const normalizedMessage = messageText.toLowerCase();
+    const isStartedNotification = normalizedMessage.includes("started");
+    const isDueDateReminder = normalizedMessage.includes("reminder:");
+    const showStatusButtons = role === "payer" && isDueDateReminder;
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -19,8 +24,7 @@ export async function POST(req) {
         <p>Dear Project Manager,</p>
     `;
 
-    // 🎯 INTERACTIVE BUTTON FOR PAYERS
-    if (role === "payer") {
+    if (showStatusButtons) {
       const siteUrl = baseUrl || "https://project-tracker-nine-phi.vercel.app";
       const canRenderActionButtons = sheetId && rowId && colId;
       const clearedLink = canRenderActionButtons
@@ -43,10 +47,15 @@ export async function POST(req) {
           </a>
         </p>
       `;
-    } else {
-      // FOR RECEIVERS
+    } else if (isStartedNotification) {
       emailHtml += `
-        <p>This is an informational update that the <strong>${type}</strong> for <strong>${project}</strong> has been processed or updated.</p>
+        <p>${messageText}</p>
+        <br/>
+      `;
+    } else {
+      emailHtml += `
+        <p>This is an informational update regarding <strong>${project}</strong>.</p>
+        <p>${messageText}</p>
         <p>No direct action is required from you at this time.</p>
         <br/>
       `;
