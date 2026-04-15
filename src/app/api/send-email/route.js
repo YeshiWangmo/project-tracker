@@ -3,7 +3,7 @@ import nodemailer from "nodemailer";
 
 export async function POST(req) {
   try {
-    const { to, project, sheetName, type, role, baseUrl } = await req.json();
+    const { to, project, sheetName, type, role, baseUrl, sheetId, rowId, colId, isReport } = await req.json();
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
@@ -22,13 +22,24 @@ export async function POST(req) {
     // 🎯 INTERACTIVE BUTTON FOR PAYERS
     if (role === "payer") {
       const siteUrl = baseUrl || "https://project-tracker-nine-phi.vercel.app";
+      const canRenderActionButtons = sheetId && rowId && colId;
+      const clearedLink = canRenderActionButtons
+        ? `${siteUrl}/api/update-status?sheetId=${sheetId}&rowId=${rowId}&colId=${colId}&status=Cleared&isReport=${Boolean(isReport)}`
+        : siteUrl;
+      const pendingLink = canRenderActionButtons
+        ? `${siteUrl}/api/update-status?sheetId=${sheetId}&rowId=${rowId}&colId=${colId}&status=Pending&isReport=${Boolean(isReport)}`
+        : siteUrl;
+
       emailHtml += `
         <p>This is a reminder that the <strong>${type}</strong> for <strong>${project}</strong> is currently pending.</p>
         <p>Please click the button below to update the status once completed.</p>
         
         <p style="margin-top: 20px; margin-bottom: 25px;">
-          <a href="${siteUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
-            Update Project Status
+          <a href="${clearedLink}" style="background-color: #10b981; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block; margin-right: 10px;">
+            Mark as Cleared
+          </a>
+          <a href="${pendingLink}" style="background-color: #f59e0b; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+            Mark as Pending
           </a>
         </p>
       `;
