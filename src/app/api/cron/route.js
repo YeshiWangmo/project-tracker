@@ -102,7 +102,7 @@ export async function GET(req) {
 
     async function processReminders(col, dateValue, row, sheet, emails, appBaseUrl, isReport) {
       const diffDays = getDateDiffDays(dateValue);
-      const rawSchedule = col.reminderDays || [30, 17, 7, 3, 1, 0];
+      const rawSchedule = col.reminderDays || [180, 90, 30, 14, 3, 1, 0];
       const schedule = [...new Set([...rawSchedule.map(Number), 1, 0])];
       let reminderSaved = false;
 

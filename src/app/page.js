@@ -35,8 +35,8 @@ export default function Home() {
     id: Date.now(),
     name: "Main Tracker",
     rows: [{ id: 1, project: "New Project", emails: {}, startDate: "", hasStarted: false, statuses: {}, dueDates: {}, reportStatuses: {}, reportDates: {} }],
-    dueTypes: [{ id: 101, title: "Phase 1", reminderDays: [30, 17, 7, 3, 0], scheduleName: "Default (30,17,7,3,0)" }],
-    reportCols: [{ id: 301, title: "Loan Doc", reminderDays: [30, 17, 7, 3, 0], scheduleName: "Default (30,17,7,3,0)" }],
+    dueTypes: [{ id: 101, title: "Phase 1", reminderDays: [180, 90, 30, 14, 3, 1, 0], scheduleName: "Default (180,90,30,14,3,1,0)" }],
+    reportCols: [{ id: 301, title: "Loan Doc", reminderDays: [180, 90, 30, 14, 3, 1, 0], scheduleName: "Default (180,90,30,14,3,1,0)" }],
     emailCols: [{ id: 201, title: "Stakeholder", role: "receiver" }]
   });
 
@@ -247,8 +247,8 @@ export default function Home() {
       setSheets(sheets.map(s => s.id === activeSheetId ? {...s, emailCols: [...(s.emailCols || []), { id: Date.now(), title: modal.value || "Email", role: modal.extra }]} : s));
     }
     if (modal.type === "ADD_COLUMN" || modal.type === "ADD_REPORT_COLUMN") {
-      let days = [30, 17, 7, 3, 0];
-      let sName = "Default (30,17,7,3,0)";
+      let days = [180, 90, 30, 14, 3, 1, 0];
+      let sName = "Default (180,90,30,14,3,1,0)";
       if (modal.extra === "weekly") { days = [7, 0]; sName = "Weekly + Due Date"; }
       if (modal.extra === "monthly") { days = [30, 0]; sName = "Monthly + Due Date"; }
       if (modal.extra === "quarterly") { days = [90, 0]; sName = "Quarterly + Due Date"; }
@@ -437,7 +437,7 @@ export default function Home() {
             {modal.type === "ADD_EMAIL_COLUMN" && (
               <select className="w-full bg-slate-50 p-4 rounded-xl outline-none border border-slate-100 mb-4 font-bold text-sm" value={modal.extra} onChange={e => setModal({...modal, extra: e.target.value})}>
                 <option value="receiver">Receiver (Information Only)</option>
-                <option value="payer">Payer (Action Required / Interactive Button)</option>
+                <option value="payer">Principal (Action Required / Interactive Button)</option>
               </select>
             )}
 
@@ -621,7 +621,7 @@ export default function Home() {
                           onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, colId: col.id, colGroup: 'emailCols' }); }}
                           className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest border-l border-slate-100 cursor-context-menu hover:bg-slate-100 transition">
                         {col.title}
-                        <div className={`text-[8px] mt-1 ${col.role === 'payer' ? 'text-amber-500' : 'text-sky-500'}`}>{col.role === 'payer' ? 'PAYER (ACTION)' : 'RECEIVER (INFO)'}</div>
+                        <div className={`text-[8px] mt-1 ${col.role === 'payer' ? 'text-amber-500' : 'text-sky-500'}`}>{col.role === 'payer' ? 'PRINCIPAL (ACTION)' : 'RECEIVER (INFO)'}</div>
                       </th>
                     ))}
                     
