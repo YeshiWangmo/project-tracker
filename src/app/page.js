@@ -425,7 +425,7 @@ export default function Home() {
             
             {(modal.type === "ADD_COLUMN" || modal.type === "ADD_REPORT_COLUMN") && (
               <select className="w-full bg-slate-50 p-4 rounded-xl outline-none border border-slate-100 mb-4 font-bold text-sm" value={modal.extra} onChange={e => setModal({...modal, extra: e.target.value})}>
-                <option value="default">Default (30, 17, 7, 3 days)</option>
+                <option value="default">Default (180, 90, 30, 14, 3, 1 days)</option>
                 <option value="weekly">Weekly (7 days before)</option>
                 <option value="monthly">Monthly (30 days before)</option>
                 <option value="quarterly">Quarterly (90 days before)</option>
