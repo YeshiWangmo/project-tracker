@@ -93,6 +93,33 @@ export async function GET(req) {
           const didChange = await processReminders(col, reportDate, row, sheet, emailsWithRoles, appBaseUrl, true);
           sheetChanged = sheetChanged || didChange;
         }
+
+        // 🎯 NEW: Check for newly added due columns and send initial notifications
+        if (!Array.isArray(row.notifiedNewCols)) row.notifiedNewCols = [];
+        
+        for (const col of sheet.dueTypes || []) {
+          const dueDate = row.dueDates?.[col.id];
+          if (dueDate && !row.notifiedNewCols.includes(`due_${col.id}`)) {
+            // This is a newly added due column - send initial notification
+            const didChange = await sendNewColumnNotification(col, dueDate, row, sheet, emailsWithRoles, appBaseUrl, false);
+            if (didChange) {
+              row.notifiedNewCols.push(`due_${col.id}`);
+              sheetChanged = true;
+            }
+          }
+        }
+
+        for (const col of sheet.reportCols || []) {
+          const reportDate = row.reportDates?.[col.id];
+          if (reportDate && !row.notifiedNewCols.includes(`report_${col.id}`)) {
+            // This is a newly added report column - send initial notification
+            const didChange = await sendNewColumnNotification(col, reportDate, row, sheet, emailsWithRoles, appBaseUrl, true);
+            if (didChange) {
+              row.notifiedNewCols.push(`report_${col.id}`);
+              sheetChanged = true;
+            }
+          }
+        }
       }
       if (sheetChanged) {
         sheet.markModified("rows");
@@ -163,6 +190,65 @@ export async function GET(req) {
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
       return reminderSaved;
+    }
+
+    async function sendNewColumnNotification(col, dateValue, row, sheet, emails, appBaseUrl, isReport) {
+      // Send initial notification for newly added due/report columns
+      let notificationSent = false;
+
+      for (const { address, role } of emails) {
+        try {
+          let customMessage = isReport 
+            ? `📋 <strong>NEW:</strong> ${row.project} - ${col.title} report is due on ${dateValue}.` 
+            : role === "payer" 
+              ? `⚠️ <strong>NEW:</strong> ${row.project} - ${col.title} is pending, the last date is ${dateValue}.` 
+              : `📅 <strong>NEW:</strong> ${row.project} - ${col.title} needs to be received on ${dateValue}.`;
+
+          let actionButtons = "";
+          if (role === "payer" && sheet._id && row.id && col.id) {
+            const clearedLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Cleared&isReport=${isReport}`;
+            const pendingLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Pending&isReport=${isReport}`;
+
+            actionButtons = `
+              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px dashed #cbd5e1;">
+                <p style="color: #d97706; font-weight: bold;">✋ Action Required:</p>
+                <p style="font-size: 14px; color: #334155; margin-bottom: 15px;">Please update the status for this newly added task:</p>
+                <a href="${clearedLink}" style="background-color: #10b981; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">✅ Mark as Cleared</a>
+                <a href="${pendingLink}" style="background-color: #f59e0b; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">⏳ Mark as Pending</a>
+              </div>
+            `;
+          }
+
+          const mailOptions = {
+            from: `"MoF Project Tracker" <${process.env.GMAIL_USER}>`,
+            to: address,
+            subject: `🆕 MoF Update: ${row.project} - New Task Added`,
+            html: `
+              <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 600px; border-left: 5px solid #f59e0b;">
+                <h2 style="color: #2563eb; margin-top: 0;">📢 MoF Project Tracker - New Task</h2>
+                <div style="background-color: #fef3c7; padding: 15px; border-left: 4px solid #f59e0b; margin: 20px 0; font-size: 16px;">
+                  <p style="margin: 0;"><strong>Project:</strong> ${row.project}</p>
+                  <p style="margin: 10px 0 0 0;"><strong>New Task Added:</strong> ${customMessage}</p>
+                </div>
+                ${actionButtons}
+                <hr style="margin: 30px 0 20px 0; border: none; border-top: 1px solid #e2e8f0;" />
+                <p style="font-size: 12px; color: #94a3b8; text-align: center;">
+                  This is an automated notification for a newly added task from the Ministry of Finance, Bhutan.
+                </p>
+              </div>
+            `,
+          };
+
+          await transporter.sendMail(mailOptions);
+          emailsSent++;
+          notificationSent = true;
+          console.log(`New column notification sent to ${address} for ${col.title}`);
+        } catch (err) {
+          console.error(`Failed to send new column notification to ${address}:`, err);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+      return notificationSent;
     }
 
     return NextResponse.json({ success: true, message: `Background scan complete. Sent ${emailsSent} emails.` });

@@ -2,7 +2,7 @@ name: Hourly Reminder Check
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '* * * * *'  # Runs every 1 minute
   workflow_dispatch:
 
 
