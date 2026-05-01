@@ -1,16 +1,15 @@
-name: Hourly Reminder Check (DISABLED - Use Vercel Cron)
+name: Hourly Reminder Check
 
 on:
-  # Cron moved to Vercel (vercel.json) - do not use GitHub Actions
-  # schedule:
-  #   - cron: '0 * * * *'
+  schedule:
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
   check-deadlines:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping API Route (Manual Only)
+      - name: Ping API Route
         run: |
           curl -i -L -X GET "https://project-tracker-nine-phi.vercel.app/api/cron" \
           -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
