@@ -83,6 +83,7 @@ export async function GET(req) {
           if (dueDate && !row.notifiedNewCols.includes(`due_${col.id}`)) {
             // This is a newly added due column - get emails and send notification
             const emailsForNewCol = extractEmailsWithRoles(sheet, row);
+            console.log(`[NEW COL] Project: ${row.project}, Column: ${col.title}, DueDate: ${dueDate}, EmailsFound: ${emailsForNewCol.length}, AlreadyNotified: ${row.notifiedNewCols.includes(`due_${col.id}`)}`);
             if (emailsForNewCol.length > 0) {
               const didChange = await sendNewColumnNotification(col, dueDate, row, sheet, emailsForNewCol, appBaseUrl, false);
               if (didChange) {
