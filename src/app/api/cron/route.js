@@ -80,7 +80,7 @@ export async function GET(req) {
         
         for (const col of sheet.dueTypes || []) {
           const dueDate = row.dueDates?.[col.id];
-          if (dueDate && !row.notifiedNewCols.includes(`due_${col.id}`)) {
+          if (dueDate && !row.notifiedNewCols.includes(`due_${col.id}`) && row.hasStarted) {
             // This is a newly added due column - get emails and send notification
             const emailsForNewCol = extractEmailsWithRoles(sheet, row);
             console.log(`[NEW COL] Project: ${row.project}, Column: ${col.title}, DueDate: ${dueDate}, EmailsFound: ${emailsForNewCol.length}, AlreadyNotified: ${row.notifiedNewCols.includes(`due_${col.id}`)}`);
@@ -96,7 +96,7 @@ export async function GET(req) {
 
         for (const col of sheet.reportCols || []) {
           const reportDate = row.reportDates?.[col.id];
-          if (reportDate && !row.notifiedNewCols.includes(`report_${col.id}`)) {
+          if (reportDate && !row.notifiedNewCols.includes(`report_${col.id}`) && row.hasStarted) {
             // This is a newly added report column - get emails and send notification
             const emailsForNewCol = extractEmailsWithRoles(sheet, row);
             if (emailsForNewCol.length > 0) {
