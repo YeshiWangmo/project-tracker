@@ -75,6 +75,40 @@ export async function GET(req) {
       let sheetChanged = false;
 
       for (const row of safeRows) {
+        // 🎯 FIRST: Check for newly added due columns and send initial notifications
+        if (!Array.isArray(row.notifiedNewCols)) row.notifiedNewCols = [];
+        
+        for (const col of sheet.dueTypes || []) {
+          const dueDate = row.dueDates?.[col.id];
+          if (dueDate && !row.notifiedNewCols.includes(`due_${col.id}`)) {
+            // This is a newly added due column - get emails and send notification
+            const emailsForNewCol = extractEmailsWithRoles(sheet, row);
+            if (emailsForNewCol.length > 0) {
+              const didChange = await sendNewColumnNotification(col, dueDate, row, sheet, emailsForNewCol, appBaseUrl, false);
+              if (didChange) {
+                row.notifiedNewCols.push(`due_${col.id}`);
+                sheetChanged = true;
+              }
+            }
+          }
+        }
+
+        for (const col of sheet.reportCols || []) {
+          const reportDate = row.reportDates?.[col.id];
+          if (reportDate && !row.notifiedNewCols.includes(`report_${col.id}`)) {
+            // This is a newly added report column - get emails and send notification
+            const emailsForNewCol = extractEmailsWithRoles(sheet, row);
+            if (emailsForNewCol.length > 0) {
+              const didChange = await sendNewColumnNotification(col, reportDate, row, sheet, emailsForNewCol, appBaseUrl, true);
+              if (didChange) {
+                row.notifiedNewCols.push(`report_${col.id}`);
+                sheetChanged = true;
+              }
+            }
+          }
+        }
+
+        // THEN: Process regular reminders (skip if no emails)
         const emailsWithRoles = extractEmailsWithRoles(sheet, row);
         if (emailsWithRoles.length === 0) continue;
 
@@ -92,33 +126,6 @@ export async function GET(req) {
           if (!reportDate || status === "Cleared") continue;
           const didChange = await processReminders(col, reportDate, row, sheet, emailsWithRoles, appBaseUrl, true);
           sheetChanged = sheetChanged || didChange;
-        }
-
-        // 🎯 NEW: Check for newly added due columns and send initial notifications
-        if (!Array.isArray(row.notifiedNewCols)) row.notifiedNewCols = [];
-        
-        for (const col of sheet.dueTypes || []) {
-          const dueDate = row.dueDates?.[col.id];
-          if (dueDate && !row.notifiedNewCols.includes(`due_${col.id}`)) {
-            // This is a newly added due column - send initial notification
-            const didChange = await sendNewColumnNotification(col, dueDate, row, sheet, emailsWithRoles, appBaseUrl, false);
-            if (didChange) {
-              row.notifiedNewCols.push(`due_${col.id}`);
-              sheetChanged = true;
-            }
-          }
-        }
-
-        for (const col of sheet.reportCols || []) {
-          const reportDate = row.reportDates?.[col.id];
-          if (reportDate && !row.notifiedNewCols.includes(`report_${col.id}`)) {
-            // This is a newly added report column - send initial notification
-            const didChange = await sendNewColumnNotification(col, reportDate, row, sheet, emailsWithRoles, appBaseUrl, true);
-            if (didChange) {
-              row.notifiedNewCols.push(`report_${col.id}`);
-              sheetChanged = true;
-            }
-          }
         }
       }
       if (sheetChanged) {
