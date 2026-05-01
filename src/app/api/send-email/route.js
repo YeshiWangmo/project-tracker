@@ -25,7 +25,7 @@ export async function POST(req) {
     `;
 
     if (showStatusButtons) {
-      const siteUrl = baseUrl || "https://project-tracker-nine-phi.vercel.app";
+      const siteUrl = baseUrl || process.env.NEXT_PUBLIC_APP_BASE_URL || process.env.APP_BASE_URL || "https://project-tracker-nine-phi.vercel.app";
       const canRenderActionButtons = sheetId && rowId && colId;
       const clearedLink = canRenderActionButtons
         ? `${siteUrl}/api/update-status?sheetId=${sheetId}&rowId=${rowId}&colId=${colId}&status=Cleared&isReport=${Boolean(isReport)}`

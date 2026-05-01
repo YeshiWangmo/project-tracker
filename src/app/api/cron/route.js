@@ -29,7 +29,7 @@ export async function GET(req) {
     let emailsSent = 0;
     const todayParts = getTimeZoneDateParts(new Date(), APP_TIME_ZONE);
     const todayUtc = Date.UTC(todayParts.year, todayParts.month - 1, todayParts.day);
-    const appBaseUrl = "https://project-tracker-nine-phi.vercel.app"; // Updated to match your frontend
+    const appBaseUrl = process.env.NEXT_PUBLIC_APP_BASE_URL || process.env.APP_BASE_URL || "https://project-tracker-nine-phi.vercel.app";
 
     const transporter = nodemailer.createTransport({
       service: "gmail",

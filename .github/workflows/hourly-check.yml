@@ -11,5 +11,5 @@ jobs:
     steps:
       - name: Ping API Route
         run: |
-          curl -i -L -X GET "https://mof-project-tracker.vercel.app/api/cron" \
+          curl -i -L -X GET "https://project-tracker-nine-phi.vercel.app/api/cron" \
           -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
