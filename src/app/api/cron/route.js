@@ -3,6 +3,8 @@ import connectMongo from "../../../lib/mongodb";
 import Tracker from "../../../models/Tracker";
 import nodemailer from "nodemailer"; 
 
+export const maxDuration = 60; // Max 60 seconds for execution
+
 const APP_TIME_ZONE = "Asia/Thimphu";
 
 function getTimeZoneDateParts(date, timeZone) {
