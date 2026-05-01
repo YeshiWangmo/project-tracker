@@ -73,17 +73,20 @@ export async function GET(req) {
     for (const sheet of sheets) {
       const safeRows = Array.isArray(sheet.rows) ? sheet.rows : [];
       let sheetChanged = false;
+      console.log(`[CRON] Processing sheet: ${sheet.name}, rows: ${safeRows.length}, dueTypes: ${(sheet.dueTypes || []).length}`);
 
       for (const row of safeRows) {
         // 🎯 FIRST: Check for newly added due columns and send initial notifications
         if (!Array.isArray(row.notifiedNewCols)) row.notifiedNewCols = [];
+        console.log(`[CRON] Row: ${row.project}, hasStarted: ${row.hasStarted}, notifiedNewCols: ${JSON.stringify(row.notifiedNewCols)}`);
         
         for (const col of sheet.dueTypes || []) {
           const dueDate = row.dueDates?.[col.id];
+          console.log(`[CRON] Checking col ${col.title} (id:${col.id}) - dueDate: ${dueDate}, hasStarted: ${row.hasStarted}, alreadyNotified: ${row.notifiedNewCols.includes(`due_${col.id}`)}`);
           if (dueDate && !row.notifiedNewCols.includes(`due_${col.id}`) && row.hasStarted) {
             // This is a newly added due column - get emails and send notification
             const emailsForNewCol = extractEmailsWithRoles(sheet, row);
-            console.log(`[NEW COL] Project: ${row.project}, Column: ${col.title}, DueDate: ${dueDate}, EmailsFound: ${emailsForNewCol.length}, AlreadyNotified: ${row.notifiedNewCols.includes(`due_${col.id}`)}`);
+            console.log(`[NEW COL] Project: ${row.project}, Column: ${col.title}, DueDate: ${dueDate}, EmailsFound: ${emailsForNewCol.length}`);
             if (emailsForNewCol.length > 0) {
               const didChange = await sendNewColumnNotification(col, dueDate, row, sheet, emailsForNewCol, appBaseUrl, false);
               if (didChange) {
@@ -259,8 +262,10 @@ export async function GET(req) {
       return notificationSent;
     }
 
+    console.log(`[CRON] Complete - Emails sent: ${emailsSent}`);
     return NextResponse.json({ success: true, message: `Background scan complete. Sent ${emailsSent} emails.` });
   } catch (error) {
+    console.error("[CRON] Error:", error);
     return NextResponse.json({ error: "Failed background scan" }, { status: 500 });
   }
 }
