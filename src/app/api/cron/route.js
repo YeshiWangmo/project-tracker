@@ -1,273 +1,383 @@
+// app/api/cron/route.js
+// ─────────────────────────────────────────────────────────────────────────────
+// Called by GitHub Actions / cron-job.org every 30 min.
+//
+// KEY BEHAVIOURS:
+//  ✅ Works whether or not "Start Project" was ever clicked (ignores hasStarted)
+//  ✅ Picks up updated due dates automatically (reads live from MongoDB)
+//  ✅ Picks up newly added columns automatically
+//  ✅ Sends a "new column" one-time notification when a column is first seen
+//  ✅ Uses sentReminderKeys to NEVER send the same reminder twice on the same day
+//  ✅ Keeps firing for overdue tasks every run until marked Cleared
+//  ✅ Stops ONLY when status === "Cleared"
+//  ✅ Timezone-aware (Asia/Thimphu)
+//  ✅ 1.5s delay between emails to respect Gmail rate limits
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { NextResponse } from "next/server";
 import connectMongo from "../../../lib/mongodb";
 import Tracker from "../../../models/Tracker";
-import nodemailer from "nodemailer"; 
+import nodemailer from "nodemailer";
 
-export const maxDuration = 60; // Max 60 seconds for execution
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const APP_TIME_ZONE = "Asia/Thimphu";
 
+// ── Timezone helper: get year/month/day in Thimphu time ──────────────────────
 function getTimeZoneDateParts(date, timeZone) {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   }).formatToParts(date);
   return {
-    year: Number(parts.find((part) => part.type === "year")?.value),
-    month: Number(parts.find((part) => part.type === "month")?.value),
-    day: Number(parts.find((part) => part.type === "day")?.value),
+    year:  Number(parts.find((p) => p.type === "year")?.value),
+    month: Number(parts.find((p) => p.type === "month")?.value),
+    day:   Number(parts.find((p) => p.type === "day")?.value),
   };
 }
 
+// ── Compute days between today (Thimphu) and a date string ───────────────────
+function getDaysLeft(dateValue, todayUtc) {
+  const value = typeof dateValue === "string" ? dateValue.trim() : "";
+  if (!value) return null;
+
+  // Fast path: plain YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split("-").map(Number);
+    const targetUtc = Date.UTC(y, m - 1, d);
+    return Math.round((targetUtc - todayUtc) / 864e5);
+  }
+
+  // Fallback: parse as JS date then convert to Thimphu day
+  const parsed = new Date(dateValue);
+  if (isNaN(parsed.getTime())) return null;
+  const parts = getTimeZoneDateParts(parsed, APP_TIME_ZONE);
+  const targetUtc = Date.UTC(parts.year, parts.month - 1, parts.day);
+  return Math.round((targetUtc - todayUtc) / 864e5);
+}
+
+// ── Extract unique recipients from a row ─────────────────────────────────────
+function getRecipients(sheet, row) {
+  const recipients = [];
+  const seen = new Set();
+
+  for (const col of sheet.emailCols || []) {
+    const emailString = row.emails?.[col.id];
+    if (typeof emailString !== "string" || !emailString.trim()) continue;
+
+    const role =
+      col?.role === "payer" ||
+      col?.title?.toLowerCase().includes("payer")
+        ? "payer"
+        : "receiver";
+
+    emailString
+      .split(/[;,]/)
+      .map((e) => e.trim())
+      .filter((e) => e.includes("@"))
+      .forEach((address) => {
+        const key = address.toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          recipients.push({ address, role });
+        }
+      });
+  }
+  return recipients;
+}
+
+// ── Build action buttons for payer emails ─────────────────────────────────────
+function buildActionButtons(appBaseUrl, sheetMongoId, rowId, colId, isReport) {
+  if (!sheetMongoId || !rowId || !colId) return "";
+  const base = `${appBaseUrl}/api/update-status?sheetId=${sheetMongoId}&rowId=${rowId}&colId=${colId}&isReport=${isReport}`;
+  return `
+    <div style="margin-top:30px;padding-top:20px;border-top:1px dashed #cbd5e1;">
+      <p style="color:#d97706;font-weight:bold;">Action Required:</p>
+      <p style="font-size:14px;color:#334155;margin-bottom:15px;">
+        Please update the status for this task:
+      </p>
+      <a href="${base}&status=Cleared"
+         style="background:#10b981;color:#fff;padding:12px 20px;
+                text-decoration:none;border-radius:6px;font-weight:bold;
+                margin-right:10px;display:inline-block;">
+        ✅ Mark as Cleared
+      </a>
+      <a href="${base}&status=Pending"
+         style="background:#f59e0b;color:#fff;padding:12px 20px;
+                text-decoration:none;border-radius:6px;font-weight:bold;
+                display:inline-block;">
+        ⏳ Mark as Pending
+      </a>
+    </div>`;
+}
+
+// ── Send one reminder email ───────────────────────────────────────────────────
+async function sendEmail(transporter, { to, subject, bodyHtml }) {
+  await transporter.sendMail({
+    from: `"MoF Project Tracker" <${process.env.GMAIL_USER}>`,
+    to,
+    subject,
+    html: `
+      <div style="font-family:Arial,sans-serif;padding:20px;
+                  border:1px solid #e2e8f0;border-radius:8px;max-width:600px;">
+        <h2 style="color:#2563eb;margin-top:0;">MoF Project Tracker</h2>
+        ${bodyHtml}
+        <hr style="margin:30px 0 20px;border:none;border-top:1px solid #e2e8f0;"/>
+        <p style="font-size:12px;color:#94a3b8;text-align:center;">
+          Automated notification — Ministry of Finance, Bhutan.
+        </p>
+      </div>`,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 export async function GET(req) {
+  // 1. Auth check
+  const authHeader = req.headers.get("authorization");
+  if (
+    process.env.CRON_SECRET &&
+    authHeader !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
+    return new NextResponse("Unauthorized", { status: 401 });
+  }
+
   try {
-    const authHeader = req.headers.get("authorization");
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
-
     await connectMongo();
-    const sheets = await Tracker.find({});
 
-    let emailsSent = 0;
+    const sheets     = await Tracker.find({});
+    const appBaseUrl = process.env.NEXT_PUBLIC_APP_BASE_URL ||
+                       process.env.APP_BASE_URL ||
+                       "https://project-tracker-nine-phi.vercel.app";
+
+    // Today in Thimphu time, as a UTC midnight timestamp for diff math
     const todayParts = getTimeZoneDateParts(new Date(), APP_TIME_ZONE);
-    const todayUtc = Date.UTC(todayParts.year, todayParts.month - 1, todayParts.day);
-    const appBaseUrl = process.env.NEXT_PUBLIC_APP_BASE_URL || process.env.APP_BASE_URL || "https://project-tracker-nine-phi.vercel.app";
+    const todayUtc   = Date.UTC(todayParts.year, todayParts.month - 1, todayParts.day);
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
-      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
     });
 
-    const extractEmailsWithRoles = (sheet, row) => {
-      const recipients = [];
-      const seenEmails = new Set();
-      for (const col of sheet.emailCols || []) {
-        const emailString = row.emails?.[col.id];
-        if (typeof emailString !== "string" || emailString.trim() === "") continue;
-        let role = col?.role === "payer" || (col?.title && col.title.toLowerCase().includes("payer")) ? "payer" : "receiver";
-        
-        emailString.split(/[;,]/).map((email) => email.trim()).filter((email) => email.includes("@")).forEach(address => {
-          const lowerAddress = address.toLowerCase();
-          if (!seenEmails.has(lowerAddress)) {
-            seenEmails.add(lowerAddress);
-            recipients.push({ address, role });
-          }
-        });
-      }
-      return recipients;
-    };
-
-    const getDateDiffDays = (dateValue) => {
-      const value = typeof dateValue === "string" ? dateValue.trim() : "";
-      if (!value) return null;
-      if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        const [year, month, day] = value.split("-").map(Number);
-        const targetUtc = Date.UTC(year, month - 1, day);
-        return Math.round((targetUtc - todayUtc) / (1000 * 60 * 60 * 24));
-      }
-      const targetDate = new Date(dateValue);
-      if (Number.isNaN(targetDate.getTime())) return null;
-      const targetParts = getTimeZoneDateParts(targetDate, APP_TIME_ZONE);
-      const targetUtc = Date.UTC(targetParts.year, targetParts.month - 1, targetParts.day);
-      return Math.round((targetUtc - todayUtc) / (1000 * 60 * 60 * 24));
-    };
+    let emailsSent = 0;
 
     for (const sheet of sheets) {
-      const safeRows = Array.isArray(sheet.rows) ? sheet.rows : [];
       let sheetChanged = false;
-      console.log(`[CRON] Processing sheet: ${sheet.name}, rows: ${safeRows.length}, dueTypes: ${(sheet.dueTypes || []).length}`);
 
-      for (const row of safeRows) {
-        // 🎯 FIRST: Check for newly added due columns and send initial notifications
-        if (!Array.isArray(row.notifiedNewCols)) row.notifiedNewCols = [];
-        console.log(`[CRON] Row: ${row.project}, hasStarted: ${row.hasStarted}, notifiedNewCols: ${JSON.stringify(row.notifiedNewCols)}`);
-        
+      for (const row of sheet.rows || []) {
+        // Skip permanently deleted rows
+        if (row.isDeleted) continue;
+
+        // Ensure tracking arrays exist
+        if (!Array.isArray(row.sentReminderKeys)) row.sentReminderKeys = [];
+        if (!Array.isArray(row.notifiedNewCols))  row.notifiedNewCols  = [];
+
+        const recipients = getRecipients(sheet, row);
+        if (recipients.length === 0) continue;
+
+        const sheetMongoId = sheet._id?.toString();
+
+        // ── PHASE 1: New-column one-time notifications ──────────────────────
+        // Fires once when a column+date combo is first seen, regardless of
+        // hasStarted. Marks the column so it never fires again for this row.
+
         for (const col of sheet.dueTypes || []) {
-          const dueDate = row.dueDates?.[col.id];
-          console.log(`[CRON] Checking col ${col.title} (id:${col.id}) - dueDate: ${dueDate}, hasStarted: ${row.hasStarted}, alreadyNotified: ${row.notifiedNewCols.includes(`due_${col.id}`)}`);
-          if (dueDate && !row.notifiedNewCols.includes(`due_${col.id}`) && row.hasStarted) {
-            // This is a newly added due column - get emails and send notification
-            const emailsForNewCol = extractEmailsWithRoles(sheet, row);
-            console.log(`[NEW COL] Project: ${row.project}, Column: ${col.title}, DueDate: ${dueDate}, EmailsFound: ${emailsForNewCol.length}`);
-            if (emailsForNewCol.length > 0) {
-              const didChange = await sendNewColumnNotification(col, dueDate, row, sheet, emailsForNewCol, appBaseUrl, false);
-              if (didChange) {
-                row.notifiedNewCols.push(`due_${col.id}`);
-                sheetChanged = true;
-              }
-            }
+          const dueDate  = row.dueDates?.[col.id];
+          const notifKey = `due_${col.id}`;
+          if (!dueDate || row.notifiedNewCols.includes(notifKey)) continue;
+          // Skip if already cleared
+          if (row.statuses?.[col.id] === "Cleared") {
+            row.notifiedNewCols.push(notifKey);
+            sheetChanged = true;
+            continue;
           }
+
+          for (const { address, role } of recipients) {
+            try {
+              const buttons = role === "payer"
+                ? buildActionButtons(appBaseUrl, sheetMongoId, row.id, col.id, false)
+                : "";
+              await sendEmail(transporter, {
+                to: address,
+                subject: `🆕 MoF: New Task Added — ${row.project}`,
+                bodyHtml: `
+                  <div style="background:#fef3c7;padding:15px;
+                              border-left:4px solid #f59e0b;margin:20px 0;">
+                    <p style="margin:0;"><strong>Project:</strong> ${row.project}</p>
+                    <p style="margin:10px 0 0;"><strong>New Due Date Column:</strong>
+                      ${col.title} — due on <strong>${dueDate}</strong>
+                    </p>
+                  </div>
+                  ${buttons}`,
+              });
+              emailsSent++;
+              console.log(`[NEW COL] ${address} ← ${row.project} / ${col.title}`);
+            } catch (err) {
+              console.error(`[NEW COL] Email failed ${address}:`, err.message);
+            }
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+
+          row.notifiedNewCols.push(notifKey);
+          sheetChanged = true;
         }
 
         for (const col of sheet.reportCols || []) {
-          const reportDate = row.reportDates?.[col.id];
-          if (reportDate && !row.notifiedNewCols.includes(`report_${col.id}`) && row.hasStarted) {
-            // This is a newly added report column - get emails and send notification
-            const emailsForNewCol = extractEmailsWithRoles(sheet, row);
-            if (emailsForNewCol.length > 0) {
-              const didChange = await sendNewColumnNotification(col, reportDate, row, sheet, emailsForNewCol, appBaseUrl, true);
-              if (didChange) {
-                row.notifiedNewCols.push(`report_${col.id}`);
-                sheetChanged = true;
-              }
-            }
+          const repDate  = row.reportDates?.[col.id];
+          const notifKey = `report_${col.id}`;
+          if (!repDate || row.notifiedNewCols.includes(notifKey)) continue;
+          if (row.reportStatuses?.[col.id] === "Cleared") {
+            row.notifiedNewCols.push(notifKey);
+            sheetChanged = true;
+            continue;
           }
+
+          for (const { address, role } of recipients) {
+            try {
+              const buttons = role === "payer"
+                ? buildActionButtons(appBaseUrl, sheetMongoId, row.id, col.id, true)
+                : "";
+              await sendEmail(transporter, {
+                to: address,
+                subject: `🆕 MoF: New Report Task Added — ${row.project}`,
+                bodyHtml: `
+                  <div style="background:#fef3c7;padding:15px;
+                              border-left:4px solid #f59e0b;margin:20px 0;">
+                    <p style="margin:0;"><strong>Project:</strong> ${row.project}</p>
+                    <p style="margin:10px 0 0;"><strong>New Report Column:</strong>
+                      ${col.title} — due on <strong>${repDate}</strong>
+                    </p>
+                  </div>
+                  ${buttons}`,
+              });
+              emailsSent++;
+              console.log(`[NEW COL] ${address} ← ${row.project} / ${col.title} (report)`);
+            } catch (err) {
+              console.error(`[NEW COL] Email failed ${address}:`, err.message);
+            }
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+
+          row.notifiedNewCols.push(notifKey);
+          sheetChanged = true;
         }
 
-        // THEN: Process regular reminders (skip if no emails)
-        const emailsWithRoles = extractEmailsWithRoles(sheet, row);
-        if (emailsWithRoles.length === 0) continue;
+        // ── PHASE 2: Scheduled reminders ────────────────────────────────────
+        // Fires on exact reminder days (e.g. 180, 90, 30, 14, 3, 1, 0).
+        // For overdue tasks (daysLeft < 0) fires on EVERY cron run until Cleared.
+        // sentReminderKeys prevents duplicate sends on the same day.
+
+        const processReminders = async (col, dateValue, isReport) => {
+          const status = isReport
+            ? row.reportStatuses?.[col.id]
+            : row.statuses?.[col.id];
+
+          // ✅ ONLY stop when explicitly Cleared
+          if (status === "Cleared") return;
+          if (!dateValue) return;
+
+          const daysLeft = getDaysLeft(dateValue, todayUtc);
+          if (daysLeft === null) return;
+
+          // Build the reminder schedule — always include day 1 and day 0
+          const rawDays  = col.reminderDays?.length
+            ? col.reminderDays
+            : [180, 90, 30, 14, 3, 1, 0];
+          const schedule = [...new Set([...rawDays.map(Number), 1, 0])];
+
+          // For overdue: fire every run. For future: only on scheduled days.
+          const isOverdue       = daysLeft < 0;
+          const isScheduledDay  = schedule.includes(daysLeft);
+          if (!isOverdue && !isScheduledDay) return;
+
+          for (const { address, role } of recipients) {
+            // Unique key = column + date + daysLeft + role + address
+            // Using daysLeft in the key means each reminder-day fires only ONCE.
+            // Overdue keys include the actual daysLeft so each day is unique.
+            const reminderKey = [
+              isReport ? "report" : "due",
+              col.id,
+              dateValue,
+              daysLeft,
+              role,
+              address.toLowerCase(),
+            ].join(":");
+
+            if (row.sentReminderKeys.includes(reminderKey)) continue;
+
+            const overdueLabel = isOverdue
+              ? `⚠️ OVERDUE by ${Math.abs(daysLeft)} day(s)`
+              : daysLeft === 0
+                ? "⚠️ DUE TODAY"
+                : `${daysLeft} day(s) remaining`;
+
+            const message = isReport
+              ? `${row.project} — <strong>${col.title}</strong> report is due on <strong>${dateValue}</strong>. (${overdueLabel})`
+              : role === "payer"
+                ? `${row.project} — <strong>${col.title}</strong> payment/action is due on <strong>${dateValue}</strong>. (${overdueLabel})`
+                : `${row.project} — <strong>${col.title}</strong> needs to be received by <strong>${dateValue}</strong>. (${overdueLabel})`;
+
+            const buttons = role === "payer"
+              ? buildActionButtons(appBaseUrl, sheetMongoId, row.id, col.id, isReport)
+              : "";
+
+            const subjectLabel = isOverdue
+              ? `OVERDUE — ${col.title} / ${row.project}`
+              : daysLeft === 0
+                ? `DUE TODAY — ${col.title} / ${row.project}`
+                : `${daysLeft}d left — ${col.title} / ${row.project}`;
+
+            try {
+              await sendEmail(transporter, {
+                to: address,
+                subject: `MoF Reminder: ${subjectLabel}`,
+                bodyHtml: `
+                  <div style="background:#f8fafc;padding:15px;
+                              border-left:4px solid #3b82f6;margin:20px 0;">
+                    <p style="margin:0;"><strong>Project:</strong> ${row.project}</p>
+                    <p style="margin:10px 0 0;">${message}</p>
+                  </div>
+                  ${buttons}`,
+              });
+              emailsSent++;
+              row.sentReminderKeys.push(reminderKey);
+              sheetChanged = true;
+              console.log(`[REMINDER] ${address} ← ${row.project} / ${col.title} / ${daysLeft}d`);
+            } catch (err) {
+              console.error(`[REMINDER] Email failed ${address}:`, err.message);
+            }
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+        };
 
         for (const col of sheet.dueTypes || []) {
-          const status = row.statuses?.[col.id];
-          const dueDate = row.dueDates?.[col.id];
-          if (!dueDate || status === "Cleared") continue;
-          const didChange = await processReminders(col, dueDate, row, sheet, emailsWithRoles, appBaseUrl, false);
-          sheetChanged = sheetChanged || didChange;
+          await processReminders(col, row.dueDates?.[col.id], false);
         }
-
         for (const col of sheet.reportCols || []) {
-          const status = row.reportStatuses?.[col.id];
-          const reportDate = row.reportDates?.[col.id];
-          if (!reportDate || status === "Cleared") continue;
-          const didChange = await processReminders(col, reportDate, row, sheet, emailsWithRoles, appBaseUrl, true);
-          sheetChanged = sheetChanged || didChange;
+          await processReminders(col, row.reportDates?.[col.id], true);
         }
       }
+
       if (sheetChanged) {
         sheet.markModified("rows");
         await sheet.save();
+        console.log(`[CRON] Saved changes → sheet: ${sheet.name}`);
       }
     }
 
-    async function processReminders(col, dateValue, row, sheet, emails, appBaseUrl, isReport) {
-      const diffDays = getDateDiffDays(dateValue);
-      const rawSchedule = col.reminderDays || [180, 90, 30, 14, 3, 1, 0];
-      const schedule = [...new Set([...rawSchedule.map(Number), 1, 0])];
-      let reminderSaved = false;
-
-      if (diffDays === null || !schedule.includes(diffDays)) return false;
-
-      for (const { address, role } of emails) {
-        const reminderKey = [isReport ? "report" : "due", col.id, dateValue, diffDays, role, address.toLowerCase()].join(":");
-        if (!Array.isArray(row.sentReminderKeys)) row.sentReminderKeys = [];
-        if (row.sentReminderKeys.includes(reminderKey)) continue;
-
-        let customMessage = isReport ? `${row.project} - ${col.title} report is due on ${dateValue}.` 
-          : role === "payer" ? `${row.project} - ${col.title} is pending, the last date is ${dateValue}.` 
-          : `${row.project} - ${col.title} needs to be received on ${dateValue}.`;
-
-        try {
-          let actionButtons = "";
-          if (role === "payer" && sheet._id && row.id && col.id) {
-            const clearedLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Cleared&isReport=${isReport}`;
-            const pendingLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Pending&isReport=${isReport}`;
-
-            actionButtons = `
-              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px dashed #cbd5e1;">
-                <p style="color: #d97706; font-weight: bold;">Action Required:</p>
-                <p style="font-size: 14px; color: #334155; margin-bottom: 15px;">Please update the status for this task:</p>
-                <a href="${clearedLink}" style="background-color: #10b981; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">Mark as Cleared</a>
-                <a href="${pendingLink}" style="background-color: #f59e0b; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Mark as Pending</a>
-              </div>
-            `;
-          }
-
-          const mailOptions = {
-            from: `"MoF Project Tracker" <${process.env.GMAIL_USER}>`,
-            to: address,
-            subject: `MoF Update: ${row.project} - Tracker`,
-            html: `
-              <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 600px;">
-                <h2 style="color: #2563eb; margin-top: 0;">MoF Project Tracker</h2>
-                <div style="background-color: #f8fafc; padding: 15px; border-left: 4px solid #3b82f6; margin: 20px 0; font-size: 16px;">
-                  <p style="margin: 0;"><strong>Project:</strong> ${row.project}</p>
-                  <p style="margin: 10px 0 0 0;"><strong>Message:</strong> ${customMessage}</p>
-                </div>
-                ${actionButtons}
-                <hr style="margin: 30px 0 20px 0; border: none; border-top: 1px solid #e2e8f0;" />
-                <p style="font-size: 12px; color: #94a3b8; text-align: center;">
-                  This is an automated notification from the Ministry of Finance, Bhutan.
-                </p>
-              </div>
-            `,
-          };
-
-          await transporter.sendMail(mailOptions);
-          emailsSent++;
-          row.sentReminderKeys.push(reminderKey);
-          reminderSaved = true;
-        } catch (err) {
-          console.error(`Email send failed for ${address}:`, err);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      }
-      return reminderSaved;
-    }
-
-    async function sendNewColumnNotification(col, dateValue, row, sheet, emails, appBaseUrl, isReport) {
-      // Send initial notification for newly added due/report columns
-      let notificationSent = false;
-
-      for (const { address, role } of emails) {
-        try {
-          let customMessage = isReport 
-            ? `📋 <strong>NEW:</strong> ${row.project} - ${col.title} report is due on ${dateValue}.` 
-            : role === "payer" 
-              ? `⚠️ <strong>NEW:</strong> ${row.project} - ${col.title} is pending, the last date is ${dateValue}.` 
-              : `📅 <strong>NEW:</strong> ${row.project} - ${col.title} needs to be received on ${dateValue}.`;
-
-          let actionButtons = "";
-          if (role === "payer" && sheet._id && row.id && col.id) {
-            const clearedLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Cleared&isReport=${isReport}`;
-            const pendingLink = `${appBaseUrl}/api/update-status?sheetId=${sheet._id.toString()}&rowId=${row.id}&colId=${col.id}&status=Pending&isReport=${isReport}`;
-
-            actionButtons = `
-              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px dashed #cbd5e1;">
-                <p style="color: #d97706; font-weight: bold;">✋ Action Required:</p>
-                <p style="font-size: 14px; color: #334155; margin-bottom: 15px;">Please update the status for this newly added task:</p>
-                <a href="${clearedLink}" style="background-color: #10b981; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-right: 10px; display: inline-block;">✅ Mark as Cleared</a>
-                <a href="${pendingLink}" style="background-color: #f59e0b; color: white; padding: 12px 20px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">⏳ Mark as Pending</a>
-              </div>
-            `;
-          }
-
-          const mailOptions = {
-            from: `"MoF Project Tracker" <${process.env.GMAIL_USER}>`,
-            to: address,
-            subject: `🆕 MoF Update: ${row.project} - New Task Added`,
-            html: `
-              <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 600px; border-left: 5px solid #f59e0b;">
-                <h2 style="color: #2563eb; margin-top: 0;">📢 MoF Project Tracker - New Task</h2>
-                <div style="background-color: #fef3c7; padding: 15px; border-left: 4px solid #f59e0b; margin: 20px 0; font-size: 16px;">
-                  <p style="margin: 0;"><strong>Project:</strong> ${row.project}</p>
-                  <p style="margin: 10px 0 0 0;"><strong>New Task Added:</strong> ${customMessage}</p>
-                </div>
-                ${actionButtons}
-                <hr style="margin: 30px 0 20px 0; border: none; border-top: 1px solid #e2e8f0;" />
-                <p style="font-size: 12px; color: #94a3b8; text-align: center;">
-                  This is an automated notification for a newly added task from the Ministry of Finance, Bhutan.
-                </p>
-              </div>
-            `,
-          };
-
-          await transporter.sendMail(mailOptions);
-          emailsSent++;
-          notificationSent = true;
-          console.log(`New column notification sent to ${address} for ${col.title}`);
-        } catch (err) {
-          console.error(`Failed to send new column notification to ${address}:`, err);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      }
-      return notificationSent;
-    }
-
-    console.log(`[CRON] Complete - Emails sent: ${emailsSent}`);
-    return NextResponse.json({ success: true, message: `Background scan complete. Sent ${emailsSent} emails.` });
+    console.log(`[CRON] Done. Emails sent: ${emailsSent}`);
+    return NextResponse.json({
+      success: true,
+      emailsSent,
+      checkedAt: new Date().toISOString(),
+    });
   } catch (error) {
-    console.error("[CRON] Error:", error);
-    return NextResponse.json({ error: "Failed background scan" }, { status: 500 });
+    console.error("[CRON] Fatal error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

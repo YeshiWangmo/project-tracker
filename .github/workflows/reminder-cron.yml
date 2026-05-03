@@ -1,0 +1,50 @@
+# .github/workflows/reminder-cron.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Calls your /api/cron endpoint every 30 minutes (GitHub Actions free tier).
+# GitHub Actions minimum schedule is every 5 min, but free accounts
+# may throttle — 30 min is the most reliable free option.
+#
+# SETUP:
+#   1. Go to your GitHub repo → Settings → Secrets and variables → Actions
+#   2. Add these two secrets:
+#      - CRON_SECRET  →  any random string e.g. "mof-super-secret-2024"
+#      - APP_BASE_URL →  https://project-tracker-nine-phi.vercel.app
+#   3. Add the same CRON_SECRET to your Vercel environment variables too.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Daily Reminder Cron
+
+on:
+  schedule:
+    # Runs every 30 minutes (GitHub free tier — reliable)
+    - cron: "*/30 * * * *"
+
+  # Also allows you to trigger it manually from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  trigger-reminders:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping /api/cron
+        run: |
+          echo "⏰ Triggering reminder cron at $(date)"
+          
+          HTTP_STATUS=$(curl -s -o /tmp/cron_response.txt -w "%{http_code}" \
+            -X GET \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_BASE_URL }}/api/cron")
+          
+          echo "📬 Response body:"
+          cat /tmp/cron_response.txt
+          
+          echo ""
+          echo "📊 HTTP Status: $HTTP_STATUS"
+          
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "❌ Cron job failed with HTTP $HTTP_STATUS"
+            exit 1
+          fi
+          
+          echo "✅ Cron job completed successfully"
