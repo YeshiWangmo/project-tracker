@@ -183,11 +183,14 @@ export async function GET(req) {
         const sheetMongoId = sheet._id?.toString();
 
         // ── PHASE 1: New-column one-time notifications ──────────────────────
-        // Fires once when a column+date combo is first seen, regardless of
-        // hasStarted. Marks the column so it never fires again for this row.
+        // Fires once when a column+date combo is first seen.
+        // justNotifiedThisRun tracks cols notified THIS run so Phase 2 skips them.
+
+        const justNotifiedThisRun = new Set();
 
         for (const col of sheet.dueTypes || []) {
           const dueDate  = row.dueDates?.[col.id];
+          const colTitle = col.title || col.name || `Column ${col.id}`;
           const notifKey = `due_${col.id}`;
           if (!dueDate || row.notifiedNewCols.includes(notifKey)) continue;
           // Skip if already cleared
@@ -210,13 +213,13 @@ export async function GET(req) {
                               border-left:4px solid #f59e0b;margin:20px 0;">
                     <p style="margin:0;"><strong>Project:</strong> ${row.project}</p>
                     <p style="margin:10px 0 0;"><strong>New Due Date Column:</strong>
-                      ${col.title} — due on <strong>${dueDate}</strong>
+                      ${colTitle} — due on <strong>${dueDate}</strong>
                     </p>
                   </div>
                   ${buttons}`,
               });
               emailsSent++;
-              console.log(`[NEW COL] ${address} ← ${row.project} / ${col.title}`);
+              console.log(`[NEW COL] ${address} ← ${row.project} / ${colTitle}`);
             } catch (err) {
               console.error(`[NEW COL] Email failed ${address}:`, err.message);
             }
@@ -224,11 +227,13 @@ export async function GET(req) {
           }
 
           row.notifiedNewCols.push(notifKey);
+          justNotifiedThisRun.add(`due_${col.id}`);
           sheetChanged = true;
         }
 
         for (const col of sheet.reportCols || []) {
           const repDate  = row.reportDates?.[col.id];
+          const colTitle = col.title || col.name || `Column ${col.id}`;
           const notifKey = `report_${col.id}`;
           if (!repDate || row.notifiedNewCols.includes(notifKey)) continue;
           if (row.reportStatuses?.[col.id] === "Cleared") {
@@ -250,13 +255,13 @@ export async function GET(req) {
                               border-left:4px solid #f59e0b;margin:20px 0;">
                     <p style="margin:0;"><strong>Project:</strong> ${row.project}</p>
                     <p style="margin:10px 0 0;"><strong>New Report Column:</strong>
-                      ${col.title} — due on <strong>${repDate}</strong>
+                      ${colTitle} — due on <strong>${repDate}</strong>
                     </p>
                   </div>
                   ${buttons}`,
               });
               emailsSent++;
-              console.log(`[NEW COL] ${address} ← ${row.project} / ${col.title} (report)`);
+              console.log(`[NEW COL] ${address} ← ${row.project} / ${colTitle} (report)`);
             } catch (err) {
               console.error(`[NEW COL] Email failed ${address}:`, err.message);
             }
@@ -264,6 +269,7 @@ export async function GET(req) {
           }
 
           row.notifiedNewCols.push(notifKey);
+          justNotifiedThisRun.add(`report_${col.id}`);
           sheetChanged = true;
         }
 
@@ -273,6 +279,11 @@ export async function GET(req) {
         // sentReminderKeys prevents duplicate sends on the same day.
 
         const processReminders = async (col, dateValue, isReport) => {
+          // Skip if this column just got a "new column" email this same run
+          const phaseOneKey = `${isReport ? "report" : "due"}_${col.id}`;
+          if (justNotifiedThisRun.has(phaseOneKey)) return;
+
+          const colTitle = col.title || col.name || `Column ${col.id}`;
           const status = isReport
             ? row.reportStatuses?.[col.id]
             : row.statuses?.[col.id];
@@ -317,20 +328,20 @@ export async function GET(req) {
                 : `${daysLeft} day(s) remaining`;
 
             const message = isReport
-              ? `${row.project} — <strong>${col.title}</strong> report is due on <strong>${dateValue}</strong>. (${overdueLabel})`
+              ? `${row.project} — <strong>${colTitle}</strong> report is due on <strong>${dateValue}</strong>. (${overdueLabel})`
               : role === "payer"
-                ? `${row.project} — <strong>${col.title}</strong> payment/action is due on <strong>${dateValue}</strong>. (${overdueLabel})`
-                : `${row.project} — <strong>${col.title}</strong> needs to be received by <strong>${dateValue}</strong>. (${overdueLabel})`;
+                ? `${row.project} — <strong>${colTitle}</strong> payment/action is due on <strong>${dateValue}</strong>. (${overdueLabel})`
+                : `${row.project} — <strong>${colTitle}</strong> needs to be received by <strong>${dateValue}</strong>. (${overdueLabel})`;
 
             const buttons = role === "payer"
               ? buildActionButtons(appBaseUrl, sheetMongoId, row.id, col.id, isReport)
               : "";
 
             const subjectLabel = isOverdue
-              ? `OVERDUE — ${col.title} / ${row.project}`
+              ? `OVERDUE — ${colTitle} / ${row.project}`
               : daysLeft === 0
-                ? `DUE TODAY — ${col.title} / ${row.project}`
-                : `${daysLeft}d left — ${col.title} / ${row.project}`;
+                ? `DUE TODAY — ${colTitle} / ${row.project}`
+                : `${daysLeft}d left — ${colTitle} / ${row.project}`;
 
             try {
               await sendEmail(transporter, {
@@ -347,7 +358,7 @@ export async function GET(req) {
               emailsSent++;
               row.sentReminderKeys.push(reminderKey);
               sheetChanged = true;
-              console.log(`[REMINDER] ${address} ← ${row.project} / ${col.title} / ${daysLeft}d`);
+              console.log(`[REMINDER] ${address} ← ${row.project} / ${colTitle} / ${daysLeft}d`);
             } catch (err) {
               console.error(`[REMINDER] Email failed ${address}:`, err.message);
             }
