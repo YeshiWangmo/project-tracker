@@ -81,21 +81,18 @@ export async function GET(req) {
       );
     }
 
-    // ── Update the correct status map ──────────────────────────────────────
-    if (isReport) {
-      if (!sheet.rows[rowIndex].reportStatuses) {
-        sheet.rows[rowIndex].reportStatuses = {};
-      }
-      sheet.rows[rowIndex].reportStatuses[colId] = status;
-    } else {
-      if (!sheet.rows[rowIndex].statuses) {
-        sheet.rows[rowIndex].statuses = {};
-      }
-      sheet.rows[rowIndex].statuses[colId] = status;
-    }
+    // ── Update using atomic $set to avoid Mongoose cast issues ───────────
+    // Direct assignment on nested mixed/map fields can fail — $set is safe.
+    const statusField = isReport
+      ? `rows.${rowIndex}.reportStatuses.${colId}`
+      : `rows.${rowIndex}.statuses.${colId}`;
 
-    sheet.markModified("rows");
-    await sheet.save();
+    await sheet.constructor.updateOne(
+      { _id: sheet._id },
+      { $set: { [statusField]: status } }
+    );
+
+    console.log(`[UPDATE-STATUS] Set ${statusField} = ${status} on sheet ${sheet._id}`);
 
     // ── Success page ───────────────────────────────────────────────────────
     const color = status === "Cleared" ? "#10b981" : "#f59e0b";
