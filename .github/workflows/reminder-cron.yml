@@ -31,10 +31,12 @@ jobs:
         run: |
           echo "⏰ Triggering reminder cron at $(date)"
           
-          HTTP_STATUS=$(curl -s -o /tmp/cron_response.txt -w "%{http_code}" \
+          # -L follows redirects (fixes 308 http→https redirect on Vercel)
+          HTTP_STATUS=$(curl -s -L -o /tmp/cron_response.txt -w "%{http_code}" \
+            --max-redirs 5 \
             -X GET \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.APP_BASE_URL }}/api/cron")
+            "https://$(echo '${{ secrets.APP_BASE_URL }}' | sed 's|https\?://||')/api/cron")
           
           echo "📬 Response body:"
           cat /tmp/cron_response.txt
