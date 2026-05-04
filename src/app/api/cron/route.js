@@ -103,13 +103,13 @@ function buildActionButtons(appBaseUrl, sheetMongoId, rowId, colId, isReport) {
          style="background:#10b981;color:#fff;padding:12px 20px;
                 text-decoration:none;border-radius:6px;font-weight:bold;
                 margin-right:10px;display:inline-block;">
-        ✅ Mark as Cleared
+                Mark as Cleared
       </a>
       <a href="${base}&status=Pending"
          style="background:#f59e0b;color:#fff;padding:12px 20px;
                 text-decoration:none;border-radius:6px;font-weight:bold;
                 display:inline-block;">
-        ⏳ Mark as Pending
+                Mark as Pending
       </a>
     </div>`;
 }
@@ -310,9 +310,9 @@ export async function GET(req) {
             if (row.sentReminderKeys.includes(reminderKey)) continue;
 
             const overdueLabel = isOverdue
-              ? `⚠️ OVERDUE by ${Math.abs(daysLeft)} day(s)`
+              ? `OVERDUE by ${Math.abs(daysLeft)} day(s)`
               : daysLeft === 0
-                ? "⚠️ DUE TODAY"
+                ? "DUE TODAY"
                 : `${daysLeft} day(s) remaining`;
 
             const message = isReport
