@@ -114,21 +114,17 @@ function buildActionButtons(appBaseUrl, sheetMongoId, rowId, colId, isReport) {
     </div>`;
 }
 
-// ── Send one reminder email ───────────────────────────────────────────────────
+// ── Send one reminder email (matches send-email route template) ───────────────
 async function sendEmail(transporter, { to, subject, bodyHtml }) {
   await transporter.sendMail({
     from: `"MoF Project Tracker" <${process.env.GMAIL_USER}>`,
     to,
     subject,
     html: `
-      <div style="font-family:Arial,sans-serif;padding:20px;
-                  border:1px solid #e2e8f0;border-radius:8px;max-width:600px;">
-        <h2 style="color:#2563eb;margin-top:0;">MoF Project Tracker</h2>
+      <div style="font-family:Arial,sans-serif;font-size:14px;color:#333;max-width:600px;">
         ${bodyHtml}
-        <hr style="margin:30px 0 20px;border:none;border-top:1px solid #e2e8f0;"/>
-        <p style="font-size:12px;color:#94a3b8;text-align:center;">
-          Automated notification — Ministry of Finance, Bhutan.
-        </p>
+        <p style="margin-bottom:5px;">Thank you,</p>
+        <p style="margin-top:0;font-weight:bold;">MoF Project Tracker</p>
       </div>`,
   });
 }
@@ -150,7 +146,7 @@ export async function GET(req) {
     const sheets     = await Tracker.find({});
     const appBaseUrl = process.env.NEXT_PUBLIC_APP_BASE_URL ||
                        process.env.APP_BASE_URL ||
-                       "https://project-tracker-nine-phi.vercel.app";
+                       "https://mof-project-tracker.vercel.app";
 
     // Today in Thimphu time, as a UTC midnight timestamp for diff math
     const todayParts = getTimeZoneDateParts(new Date(), APP_TIME_ZONE);
@@ -207,16 +203,12 @@ export async function GET(req) {
                 : "";
               await sendEmail(transporter, {
                 to: address,
-                subject: `🆕 MoF: New Task Added — ${row.project}`,
+                subject: `MoF Update: ${row.project} - Tracker`,
                 bodyHtml: `
-                  <div style="background:#fef3c7;padding:15px;
-                              border-left:4px solid #f59e0b;margin:20px 0;">
-                    <p style="margin:0;"><strong>Project:</strong> ${row.project}</p>
-                    <p style="margin:10px 0 0;"><strong>New Due Date Column:</strong>
-                      ${colTitle} — due on <strong>${dueDate}</strong>
-                    </p>
-                  </div>
-                  ${buttons}`,
+                  <p>Dear Project Manager,</p>
+                  <p>This is a reminder that the <strong>${colTitle}</strong> for <strong>${row.project}</strong> is currently pending, the last date is <strong>${dueDate}</strong>.</p>
+                  ${buttons ? `<p>Please click the button below to update the status once completed.</p>${buttons}` : `<p>No direct action is required from you at this time.</p>`}
+                  <br/>`,
               });
               emailsSent++;
               console.log(`[NEW COL] ${address} ← ${row.project} / ${colTitle}`);
@@ -249,16 +241,12 @@ export async function GET(req) {
                 : "";
               await sendEmail(transporter, {
                 to: address,
-                subject: `🆕 MoF: New Report Task Added — ${row.project}`,
+                subject: `MoF Update: ${row.project} - Tracker`,
                 bodyHtml: `
-                  <div style="background:#fef3c7;padding:15px;
-                              border-left:4px solid #f59e0b;margin:20px 0;">
-                    <p style="margin:0;"><strong>Project:</strong> ${row.project}</p>
-                    <p style="margin:10px 0 0;"><strong>New Report Column:</strong>
-                      ${colTitle} — due on <strong>${repDate}</strong>
-                    </p>
-                  </div>
-                  ${buttons}`,
+                  <p>Dear Project Manager,</p>
+                  <p>This is a reminder that the <strong>${colTitle}</strong> report for <strong>${row.project}</strong> is currently pending, the last date is <strong>${repDate}</strong>.</p>
+                  ${buttons ? `<p>Please click the button below to update the status once completed.</p>${buttons}` : `<p>No direct action is required from you at this time.</p>`}
+                  <br/>`,
               });
               emailsSent++;
               console.log(`[NEW COL] ${address} ← ${row.project} / ${colTitle} (report)`);
@@ -346,14 +334,18 @@ export async function GET(req) {
             try {
               await sendEmail(transporter, {
                 to: address,
-                subject: `MoF Reminder: ${subjectLabel}`,
+                subject: `MoF Update: ${row.project} - Tracker`,
                 bodyHtml: `
-                  <div style="background:#f8fafc;padding:15px;
-                              border-left:4px solid #3b82f6;margin:20px 0;">
-                    <p style="margin:0;"><strong>Project:</strong> ${row.project}</p>
-                    <p style="margin:10px 0 0;">${message}</p>
-                  </div>
-                  ${buttons}`,
+                  <p>Dear Project Manager,</p>
+                  ${buttons
+                    ? `<p>This is a reminder that the <strong>${message}</strong> for <strong>${row.project}</strong> is currently pending.</p>
+                       <p>Please click the button below to update the status once completed.</p>
+                       ${buttons}`
+                    : `<p>This is an informational update regarding <strong>${row.project}</strong>.</p>
+                       <p>${message}</p>
+                       <p>No direct action is required from you at this time.</p>`
+                  }
+                  <br/>`,
               });
               emailsSent++;
               row.sentReminderKeys.push(reminderKey);
