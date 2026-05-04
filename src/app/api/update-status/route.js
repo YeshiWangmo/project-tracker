@@ -1,7 +1,4 @@
 // app/api/update-status/route.js
-// Handles "Mark as Cleared / Pending" button clicks from reminder emails.
-// Robust ID matching: handles row.id as Number OR String in MongoDB.
-
 import { NextResponse } from "next/server";
 import connectMongo from "../../../lib/mongodb";
 import Tracker from "../../../models/Tracker";
@@ -36,7 +33,6 @@ export async function GET(req) {
     const status   = searchParams.get("status");
     const isReport = searchParams.get("isReport") === "true";
 
-    // ── Security checks ────────────────────────────────────────────────────
     if (!sheetId || !rowId || !colId || !status) {
       return errorHtml("Missing Information", "The link appears to be broken or incomplete.");
     }
@@ -46,7 +42,7 @@ export async function GET(req) {
 
     await connectMongo();
 
-    // ── Find sheet — try ObjectId, numeric id, and string id ──────────────
+    // Find sheet by ObjectId or numeric id
     const queryOptions = [];
     if (mongoose.Types.ObjectId.isValid(sheetId)) {
       queryOptions.push({ _id: sheetId });
@@ -62,39 +58,39 @@ export async function GET(req) {
       return errorHtml("Database Error", "Project Tracker sheet not found.");
     }
 
-    // ── Find row — compare as BOTH number and string to handle schema cast ─
-    // row.id is stored as Number in the schema, so Number(rowId) is the fix.
+    // Find row index — match as number OR string
     const numericRowId = Number(rowId);
     const rowIndex = sheet.rows.findIndex((r) => {
-      const rId = r.id;
-      // Match if numeric ids equal, OR string representations match
       return (
-        (!isNaN(numericRowId) && Number(rId) === numericRowId) ||
-        String(rId) === String(rowId)
+        (!isNaN(numericRowId) && Number(r.id) === numericRowId) ||
+        String(r.id) === String(rowId)
       );
     });
 
     if (rowIndex === -1) {
-      return errorHtml(
-        "Not Found",
-        `Could not find project row (id: ${rowId}). It may have been deleted.`
-      );
+      return errorHtml("Not Found", `Could not find project row (id: ${rowId}).`);
     }
 
-    // ── Update using atomic $set to avoid Mongoose cast issues ───────────
-    // Direct assignment on nested mixed/map fields can fail — $set is safe.
-    const statusField = isReport
-      ? `rows.${rowIndex}.reportStatuses.${colId}`
-      : `rows.${rowIndex}.statuses.${colId}`;
+    // ── KEY FIX: modify the row in JS, then use replaceOne to save the whole rows array ──
+    // This avoids ALL dot-notation issues with numeric keys in nested objects.
+    const rows = sheet.rows.map((r, i) => {
+      if (i !== rowIndex) return r;
+      const updated = { ...r };
+      if (isReport) {
+        updated.reportStatuses = { ...(r.reportStatuses || {}), [colId]: status };
+      } else {
+        updated.statuses = { ...(r.statuses || {}), [colId]: status };
+      }
+      return updated;
+    });
 
-    await sheet.constructor.updateOne(
+    await Tracker.updateOne(
       { _id: sheet._id },
-      { $set: { [statusField]: status } }
+      { $set: { rows } }
     );
 
-    console.log(`[UPDATE-STATUS] Set ${statusField} = ${status} on sheet ${sheet._id}`);
+    console.log(`[UPDATE-STATUS] row[${rowIndex}] ${isReport ? "reportStatuses" : "statuses"}[${colId}] = ${status}`);
 
-    // ── Success page ───────────────────────────────────────────────────────
     const color = status === "Cleared" ? "#10b981" : "#f59e0b";
     const icon  = status === "Cleared" ? "✅" : "⏳";
 
@@ -120,9 +116,6 @@ export async function GET(req) {
 
   } catch (error) {
     console.error("Error updating status via email:", error);
-    return errorHtml(
-      "System Error",
-      "An unexpected error occurred while saving to the database."
-    );
+    return errorHtml("System Error", "An unexpected error occurred while saving to the database.");
   }
 }
