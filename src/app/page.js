@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { UserButton, useUser } from "@clerk/nextjs";
 
 export default function Home() {
-  const appBaseUrl = "https://project-tracker-nine-phi.vercel.app";
+  const appBaseUrl ="https://mof-project-tracker.vercel.app";
   const [sheets, setSheets] = useState([]);
   const [activeSheetId, setActiveSheetId] = useState(null);
   const [history, setHistory] = useState([]);
@@ -740,7 +740,32 @@ export default function Home() {
                                     }
                                   });
 
-                                  setSheets(sheets.map(s => s.id === activeSheetId ? {...s, rows: s.rows.map(r => r.id === row.id ? {...r, hasStarted: true} : r)} : s));
+                                  const notifiedByStart = [];
+dueTypes.forEach(col => {
+  const dueDate = row.dueDates?.[col.id];
+  if (!dueDate) return;
+  const t = new Date(); t.setHours(0,0,0,0);
+  const d = new Date(dueDate); d.setHours(0,0,0,0);
+  const daysLeft = Math.round((d - t) / (1000 * 60 * 60 * 24));
+  if (col.reminderDays?.some(day => day === daysLeft) || daysLeft <= 0) {
+    notifiedByStart.push(`due_${col.id}`);
+  }
+});
+reportCols.forEach(col => {
+  const repDate = row.reportDates?.[col.id];
+  if (!repDate) return;
+  const t = new Date(); t.setHours(0,0,0,0);
+  const d = new Date(repDate); d.setHours(0,0,0,0);
+  const daysLeft = Math.round((d - t) / (1000 * 60 * 60 * 24));
+  if (col.reminderDays?.some(day => day === daysLeft) || daysLeft <= 0) {
+    notifiedByStart.push(`report_${col.id}`);
+  }
+});
+setSheets(sheets.map(s => s.id === activeSheetId ? {
+  ...s, rows: s.rows.map(r => r.id === row.id ? {
+    ...r, hasStarted: true, notifiedNewCols: notifiedByStart
+  } : r)
+} : s));
                                 }} className="w-full py-2 rounded-lg text-[8px] font-black tracking-widest border transition-all bg-blue-500 text-white border-blue-600 hover:bg-blue-600 shadow-sm">START PROJECT</button>
                             ) : (
                               <div className="w-full py-2 rounded-lg text-[8px] font-black tracking-widest border transition-all bg-slate-200 text-slate-500 text-center cursor-not-allowed border-slate-300">NOTIFIED</div>
