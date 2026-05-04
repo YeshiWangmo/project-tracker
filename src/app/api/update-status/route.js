@@ -5,23 +5,15 @@ import Tracker from "../../../models/Tracker";
 import mongoose from "mongoose";
 
 function errorHtml(title, message) {
-  return new NextResponse(`
-    <html>
-      <body style="font-family:sans-serif;display:flex;justify-content:center;
-                   align-items:center;height:100vh;background:#f8fafc;margin:0;">
-        <div style="background:white;padding:40px;border-radius:12px;
-                    box-shadow:0 4px 15px rgba(0,0,0,0.1);text-align:center;
-                    max-width:400px;border-top:4px solid #ef4444;">
-          <div style="font-size:50px;margin-bottom:10px;">⚠️</div>
-          <h1 style="color:#ef4444;margin-top:0;">${title}</h1>
-          <p style="font-size:16px;color:#475569;line-height:1.5;">${message}</p>
-          <p style="color:#94a3b8;margin-top:30px;font-size:14px;">
-            Please contact the administrator or try again.
-          </p>
-        </div>
-      </body>
-    </html>
-  `, { status: 400, headers: { "Content-Type": "text/html" } });
+  return new NextResponse(`<html><body style="font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#f8fafc;margin:0;"><div style="background:white;padding:40px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1);text-align:center;max-width:400px;border-top:4px solid #ef4444;"><h1 style="color:#ef4444;">${title}</h1><p style="color:#475569;">${message}</p></div></body></html>`, 
+  { status: 400, headers: { "Content-Type": "text/html" } });
+}
+
+function successHtml(status) {
+  const color = status === "Cleared" ? "#10b981" : "#f59e0b";
+  const icon = status === "Cleared" ? "✅" : "⏳";
+  return new NextResponse(`<html><body style="font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#f8fafc;margin:0;"><div style="background:white;padding:40px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1);text-align:center;max-width:400px;border-top:4px solid ${color};"><div style="font-size:50px;">${icon}</div><h1 style="color:${color};">Status Updated!</h1><p style="color:#475569;">Marked as <strong>${status}</strong>.</p><p style="color:#94a3b8;font-size:14px;">You can safely close this window.</p></div></body></html>`,
+  { headers: { "Content-Type": "text/html" } });
 }
 
 export async function GET(req) {
@@ -33,6 +25,8 @@ export async function GET(req) {
     const status   = searchParams.get("status");
     const isReport = searchParams.get("isReport") === "true";
 
+    console.log(`[UPDATE-STATUS] sheetId=${sheetId} rowId=${rowId} colId=${colId} status=${status} isReport=${isReport}`);
+
     if (!sheetId || !rowId || !colId || !status) {
       return errorHtml("Missing Information", "The link appears to be broken or incomplete.");
     }
@@ -42,80 +36,47 @@ export async function GET(req) {
 
     await connectMongo();
 
-    // Find sheet by ObjectId or numeric id
+    // Find sheet
     const queryOptions = [];
-    if (mongoose.Types.ObjectId.isValid(sheetId)) {
-      queryOptions.push({ _id: sheetId });
-    }
+    if (mongoose.Types.ObjectId.isValid(sheetId)) queryOptions.push({ _id: new mongoose.Types.ObjectId(sheetId) });
     const numericSheetId = Number(sheetId);
-    if (!isNaN(numericSheetId)) {
-      queryOptions.push({ id: numericSheetId });
-    }
-    queryOptions.push({ id: sheetId });
+    if (!isNaN(numericSheetId) && numericSheetId > 0) queryOptions.push({ id: numericSheetId });
 
-    const sheet = await Tracker.findOne({ $or: queryOptions });
-    if (!sheet) {
-      return errorHtml("Database Error", "Project Tracker sheet not found.");
-    }
+    const sheet = await Tracker.findOne({ $or: queryOptions }).lean();
+    if (!sheet) return errorHtml("Not Found", `Sheet not found for id: ${sheetId}`);
 
-    // Find row index — match as number OR string
-    const numericRowId = Number(rowId);
-    const rowIndex = sheet.rows.findIndex((r) => {
-      return (
-        (!isNaN(numericRowId) && Number(r.id) === numericRowId) ||
-        String(r.id) === String(rowId)
-      );
-    });
+    console.log(`[UPDATE-STATUS] Found sheet: ${sheet.name}, rows: ${sheet.rows?.length}`);
 
-    if (rowIndex === -1) {
-      return errorHtml("Not Found", `Could not find project row (id: ${rowId}).`);
-    }
+    // Find row - use string comparison only to avoid any cast issues
+    const rowIdStr = String(rowId);
+    const rowIndex = (sheet.rows || []).findIndex(r => String(r.id) === rowIdStr);
 
-    // ── KEY FIX: modify the row in JS, then use replaceOne to save the whole rows array ──
-    // This avoids ALL dot-notation issues with numeric keys in nested objects.
-    const rows = sheet.rows.map((r, i) => {
+    console.log(`[UPDATE-STATUS] rowIndex=${rowIndex} for rowId=${rowIdStr}`);
+
+    if (rowIndex === -1) return errorHtml("Not Found", `Row not found for id: ${rowId}`);
+
+    // Build the updated rows array in JS (no dot notation, no cast issues)
+    const updatedRows = sheet.rows.map((r, i) => {
       if (i !== rowIndex) return r;
-      const updated = { ...r };
       if (isReport) {
-        updated.reportStatuses = { ...(r.reportStatuses || {}), [colId]: status };
+        return { ...r, reportStatuses: { ...(r.reportStatuses || {}), [colId]: status } };
       } else {
-        updated.statuses = { ...(r.statuses || {}), [colId]: status };
+        return { ...r, statuses: { ...(r.statuses || {}), [colId]: status } };
       }
-      return updated;
     });
 
-    await Tracker.updateOne(
+    // Save using raw MongoDB driver to bypass ALL Mongoose casting
+    const db = mongoose.connection.db;
+    await db.collection("trackers").updateOne(
       { _id: sheet._id },
-      { $set: { rows } }
+      { $set: { rows: updatedRows } }
     );
 
-    console.log(`[UPDATE-STATUS] row[${rowIndex}] ${isReport ? "reportStatuses" : "statuses"}[${colId}] = ${status}`);
-
-    const color = status === "Cleared" ? "#10b981" : "#f59e0b";
-    const icon  = status === "Cleared" ? "✅" : "⏳";
-
-    return new NextResponse(`
-      <html>
-        <body style="font-family:sans-serif;display:flex;justify-content:center;
-                     align-items:center;height:100vh;background:#f8fafc;margin:0;">
-          <div style="background:white;padding:40px;border-radius:12px;
-                      box-shadow:0 4px 15px rgba(0,0,0,0.1);text-align:center;
-                      max-width:400px;border-top:4px solid ${color};">
-            <div style="font-size:50px;margin-bottom:10px;">${icon}</div>
-            <h1 style="color:${color};margin-top:0;">Status Updated!</h1>
-            <p style="font-size:16px;color:#475569;line-height:1.5;">
-              The task has been marked as <strong>${status}</strong>.
-            </p>
-            <p style="color:#94a3b8;margin-top:30px;font-size:14px;">
-              You can safely close this window.
-            </p>
-          </div>
-        </body>
-      </html>
-    `, { headers: { "Content-Type": "text/html" } });
+    console.log(`[UPDATE-STATUS] SUCCESS - saved rows for sheet ${sheet._id}`);
+    return successHtml(status);
 
   } catch (error) {
-    console.error("Error updating status via email:", error);
-    return errorHtml("System Error", "An unexpected error occurred while saving to the database.");
+    console.error("[UPDATE-STATUS] Error:", error);
+    return errorHtml("System Error", `${error.message}`);
   }
 }
