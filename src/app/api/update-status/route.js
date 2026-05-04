@@ -11,7 +11,7 @@ function errorHtml(title, message) {
 
 function successHtml(status) {
   const color = status === "Cleared" ? "#10b981" : "#f59e0b";
-  const icon = status === "Cleared" ? "✅" : "⏳";
+  const icon = status === "Cleared" ? "&#9989;" : "&#9203;";
   return new NextResponse(`<html><body style="font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:#f8fafc;margin:0;"><div style="background:white;padding:40px;border-radius:12px;box-shadow:0 4px 15px rgba(0,0,0,0.1);text-align:center;max-width:400px;border-top:4px solid ${color};"><div style="font-size:50px;">${icon}</div><h1 style="color:${color};">Status Updated!</h1><p style="color:#475569;">Marked as <strong>${status}</strong>.</p><p style="color:#94a3b8;font-size:14px;">You can safely close this window.</p></div></body></html>`,
   { headers: { "Content-Type": "text/html" } });
 }
